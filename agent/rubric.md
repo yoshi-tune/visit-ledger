@@ -9,3 +9,4 @@
 - `next_action` は店全体で1つで、手間・見る数字・比べる相手と期間・仮置きの目標が書かれている
 - 名前・電話などの個人情報、仮の番号以外の識別子が出ていない
 - 文章は日本語で、店長が読んで分かる言葉になっている
+- 短く書かれている：検算が一致した時、`reconciliation.summary` は1〜2文で、`funnel.json` の数字を書き直していない（`differences` は本当の食い違いだけ。無ければ空）。`observations` は8件まで、`hypotheses` は3件まで、`to_check` は4件まで、`steps` は2〜4件。`finding`・`decision`・見立ては、それぞれ3文まで

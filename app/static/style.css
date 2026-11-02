@@ -400,3 +400,6 @@ details > summary { cursor: pointer; font-weight: 700; color: var(--ink-2); padd
 .msg .text.rich .li::before { content: "・"; position: absolute; left: 0; color: var(--muted); }
 .msg .text.rich code { font-family: ui-monospace, Consolas, monospace; font-size: 0.8125rem; background: var(--surface); padding: 0 4px; border-radius: 4px; }
 .choice .desc.cost { color: var(--accent); margin-top: 2px; }
+.report details.fold { border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; background: var(--surface); }
+.report details.fold > summary { cursor: pointer; font-weight: 700; font-size: 0.9375rem; }
+.report details.fold .fold-body { margin-top: 10px; }

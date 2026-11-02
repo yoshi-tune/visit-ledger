@@ -6,6 +6,13 @@ import { say } from "./mascot.js";
 /** @param {string} title @param {(Node | string)[]} children */
 const block = (title, children) => el("section", {}, [el("h3", {}, [title]), ...children]);
 
+/** 開いた時だけ見る欄 @param {(Node | string)[]} head @param {(Node | string)[]} body @param {boolean} [open] */
+const fold = (head, body, open = false) => {
+  const d = el("details", { class: "fold" }, [el("summary", {}, head), el("div", { class: "fold-body" }, body)]);
+  /** @type {HTMLDetailsElement} */ (d).open = open;
+  return d;
+};
+
 /** @param {any} run */
 export function renderReport(run) {
   const out = [];
@@ -16,18 +23,38 @@ export function renderReport(run) {
       out.push(el("p", { class: "banner" }, ["予備の形（1回の呼び出し）で書いた報告です。コードでの追加の集計はしていません。"]));
     }
     const rec = r.reconciliation;
-    out.push(block("検算", [
-      el("span", { class: rec.matches ? "ok-badge" : "bad-badge" }, [rec.matches ? "✓ アプリの数字と一致" : "! 食い違いあり"]),
-      el("p", { style: "margin-top:8px" }, [rec.summary]),
-      ...rec.differences.map((/** @type {string} */ d) => el("p", { class: rec.matches ? "muted" : "input-error" }, [d])),
-      ...(rec.matches ? [el("p", { class: "muted" }, ["同じ入力に対する2つの集計が一致した、という意味です（台帳そのものの正しさの証明ではありません）。"])] : []),
-    ]));
+    // 先に読むもの：見立ての変化・次の一手・仮説。残りは開いた時だけ見る（検算は食い違いがある時だけ開いておく）
     out.push(block("見立ての変化", [el("div", { class: "views" }, [
       el("div", { class: "view" }, [el("div", { class: "muted" }, ["最初の見立て"]), el("p", {}, [r.first_view])]),
       el("div", { class: "arrow", "aria-hidden": "true" }, ["→"]),
       el("div", { class: "view after" }, [el("div", { class: "muted" }, ["集計を重ねた後"]), el("p", {}, [r.revised_view])]),
     ])]));
-    out.push(block("集計を重ねた記録", [el("ol", { class: "timeline" }, (r.steps || []).map((/** @type {any} */ s) =>
+    const n = r.next_action;
+    out.push(el("section", { class: "next-action" }, [
+      el("div", { class: "small" }, ["次の一手（店全体で1つ）"]),
+      el("div", { class: "action" }, [n.action]),
+      el("dl", {}, [
+        el("dt", {}, ["手間"]), el("dd", {}, [n.effort]),
+        el("dt", {}, ["見る数字"]), el("dd", {}, [n.metric]),
+        el("dt", {}, ["比べる相手"]), el("dd", {}, [n.comparison]),
+        el("dt", {}, ["仮置きの目標"]), el("dd", {}, [n.provisional_target]),
+      ]),
+    ]));
+    out.push(block("原因の仮説（言い切りません）", (r.hypotheses || []).map((/** @type {any} */ h) =>
+      el("div", { class: "card", style: "box-shadow:none;margin-bottom:8px" }, [
+        el("p", {}, [el("b", {}, [h.statement])]),
+        el("p", { class: "small" }, [`支える観測：${h.supporting}`]),
+        el("p", { class: "small muted" }, [`確かめ方：${h.how_to_check}`]),
+      ]))));
+
+    out.push(fold([
+      el("span", { class: rec.matches ? "ok-badge" : "bad-badge" }, [rec.matches ? "✓ 検算：アプリの数字と一致" : "! 検算：食い違いあり"]),
+    ], [
+      el("p", {}, [rec.summary]),
+      ...rec.differences.map((/** @type {string} */ d) => el("p", { class: rec.matches ? "muted" : "input-error" }, [d])),
+      ...(rec.matches ? [el("p", { class: "muted" }, ["同じ入力に対する2つの集計が一致した、という意味です（台帳そのものの正しさの証明ではありません）。"])] : []),
+    ], !rec.matches));
+    out.push(fold([`集計を重ねた記録（${(r.steps || []).length}回）`], [el("ol", { class: "timeline" }, (r.steps || []).map((/** @type {any} */ s) =>
       el("li", {}, [
         el("div", { class: "step-name" }, [s.step]),
         el("div", {}, [el("b", {}, [s.question])]),
@@ -44,25 +71,8 @@ export function renderReport(run) {
         el("td", { class: "muted" }, [(o.steps || []).join(", ")]),
       ]));
     }
-    out.push(block("観測した事実（台帳の数字で言えること）", [el("div", { class: "table-wrap" }, [obs])]));
-    out.push(block("原因の仮説（言い切りません）", (r.hypotheses || []).map((/** @type {any} */ h) =>
-      el("div", { class: "card", style: "box-shadow:none;margin-bottom:8px" }, [
-        el("p", {}, [el("b", {}, [h.statement])]),
-        el("p", { class: "small" }, [`支える観測：${h.supporting}`]),
-        el("p", { class: "small muted" }, [`確かめ方：${h.how_to_check}`]),
-      ]))));
-    out.push(block("台帳だけでは確かめられないこと", [el("ul", {}, (r.to_check || []).map((/** @type {string} */ t) => el("li", {}, [t])))]));
-    const n = r.next_action;
-    const dl = el("dl", {}, [
-      el("dt", {}, ["手間"]), el("dd", {}, [n.effort]),
-      el("dt", {}, ["見る数字"]), el("dd", {}, [n.metric]),
-      el("dt", {}, ["比べる相手"]), el("dd", {}, [n.comparison]),
-      el("dt", {}, ["仮置きの目標"]), el("dd", {}, [n.provisional_target]),
-    ]);
-    out.push(el("section", { class: "next-action" }, [
-      el("div", { class: "small" }, ["次の一手（店全体で1つ）"]),
-      el("div", { class: "action" }, [n.action]), dl,
-    ]));
+    out.push(fold([`観測した事実（台帳の数字で言えること・${(r.observations || []).length}件）`], [el("div", { class: "table-wrap" }, [obs])]));
+    out.push(fold([`台帳だけでは確かめられないこと（${(r.to_check || []).length}件）`], [el("ul", {}, (r.to_check || []).map((/** @type {string} */ t) => el("li", {}, [t])))]));
   }
   const tools = (run.tool_log || []).filter((/** @type {any} */ e) => e.kind === "tool");
   if (tools.length) {
