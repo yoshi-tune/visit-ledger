@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>施策の効果</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header>
+    <h1>施策の効果 <span id="store" class="muted"></span></h1>
+    <div class="sub" id="period"></div>
+    <nav><a href="/desk">受付</a><a href="/dashboard">効果の画面</a></nav>
+  </header>
+  <main>
+    <p id="note" class="note"></p>
+    <div id="campaigns" class="grid2"></div>
+    <p id="unknown" class="muted"></p>
+
+    <section class="card">
+      <h2>Claude に分析を頼む</h2>
+      <p class="muted">台帳の書き出し（名前・電話を含まない列だけ）とこの画面の数字を渡し、Claude が集計を重ねて調べます。</p>
+      <button id="ask">分析を頼む</button>
+      <p id="status" class="muted"></p>
+      <div id="report"></div>
+    </section>
+    <p id="error" class="error"></p>
+  </main>
+  <script type="module" src="/static/dashboard.js"></script>
+</body>
+</html>

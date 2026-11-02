@@ -1,0 +1,77 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["as_of", "period", "reconciliation", "first_view", "steps", "revised_view",
+               "observations", "hypotheses", "to_check", "next_action"],
+  "properties": {
+    "as_of": {"type": "string", "description": "基準日（YYYY-MM-DD）"},
+    "period": {
+      "type": "object", "additionalProperties": false, "required": ["from", "to"],
+      "properties": {"from": {"type": "string"}, "to": {"type": "string"}}
+    },
+    "reconciliation": {
+      "type": "object", "additionalProperties": false,
+      "required": ["matches", "summary", "differences"],
+      "properties": {
+        "matches": {"type": "boolean"},
+        "summary": {"type": "string", "description": "数え直した結果の要約（件数を含む）"},
+        "differences": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "first_view": {"type": "string", "description": "最初の見立て"},
+    "steps": {
+      "type": "array",
+      "description": "集計を重ねた記録。1件が1つのスクリプト",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["step", "question", "finding", "decision"],
+        "properties": {
+          "step": {"type": "string", "description": "step_01 など"},
+          "question": {"type": "string", "description": "何を確かめるために集計したか"},
+          "finding": {"type": "string", "description": "何が出たか（数字を含む）"},
+          "decision": {"type": "string", "description": "それを見て見立てをどうしたか"}
+        }
+      }
+    },
+    "revised_view": {"type": "string", "description": "集計を重ねた後の見立て"},
+    "observations": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["statement", "src", "numerator", "denominator", "condition", "steps"],
+        "properties": {
+          "statement": {"type": "string"},
+          "src": {"type": "string", "description": "flyer / line / all など"},
+          "numerator": {"type": "integer"},
+          "denominator": {"type": "integer"},
+          "condition": {"type": "string", "description": "集計の条件"},
+          "steps": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    },
+    "hypotheses": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["statement", "supporting", "how_to_check"],
+        "properties": {
+          "statement": {"type": "string"},
+          "supporting": {"type": "string", "description": "支える観測"},
+          "how_to_check": {"type": "string", "description": "何を集めれば確かめられるか"}
+        }
+      }
+    },
+    "to_check": {"type": "array", "items": {"type": "string"}, "description": "台帳だけでは確かめられないこと"},
+    "next_action": {
+      "type": "object", "additionalProperties": false,
+      "required": ["action", "effort", "metric", "comparison", "provisional_target"],
+      "properties": {
+        "action": {"type": "string"},
+        "effort": {"type": "string", "description": "店にかかる手間"},
+        "metric": {"type": "string", "description": "見る数字"},
+        "comparison": {"type": "string", "description": "比べる相手と期間"},
+        "provisional_target": {"type": "string", "description": "仮置きの目標"}
+      }
+    }
+  }
+}

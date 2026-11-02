@@ -27,3 +27,6 @@ Thumbs.db
 desktop.ini
 .vscode/
 .idea/
+
+# 手元の分析エージェントの ID（setup_agent.py が書く）
+data/agent_ids.json

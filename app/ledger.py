@@ -107,7 +107,8 @@ class LedgerError(Exception):
 
 
 def connect(path: str | Path) -> sqlite3.Connection:
-    conn = sqlite3.connect(path)
+    # 接続はリクエストごとに1つ作って閉じる。FastAPI は作る・閉じるを別のスレッドで行うことがあるので許可する
+    conn = sqlite3.connect(path, check_same_thread=False, timeout=10)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     return conn

@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>受付</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header>
+    <h1>受付 <span id="store" class="muted"></span></h1>
+    <div class="sub">今日：<span id="today"></span> ・ 担当：<select id="staff"></select></div>
+    <nav><a href="/desk">受付</a><a href="/dashboard">効果の画面</a></nav>
+  </header>
+  <main>
+    <p id="message" class="muted"></p>
+
+    <section class="card">
+      <h2>未連絡の希望 <span id="n-requested" class="tag"></span></h2>
+      <p class="muted">電話で日時を決めたら「確定」。受けられない時・お客様がやめた時はそれぞれのボタン。</p>
+      <div id="requested"></div>
+    </section>
+
+    <section class="card">
+      <h2>今日の確定予約 <span id="n-today" class="tag"></span></h2>
+      <div id="today-list"></div>
+    </section>
+
+    <section class="card">
+      <h2>今日の来店 <span id="n-visited" class="tag"></span></h2>
+      <p class="muted">間違えて押した来店は「来店の取り消し」で確定に戻せます。</p>
+      <div id="visited"></div>
+    </section>
+
+    <section class="card">
+      <h2>名前で探す</h2>
+      <input id="q" placeholder="お名前の一部">
+      <div id="search"></div>
+    </section>
+
+    <section class="card">
+      <h2>押し忘れた来店を記録する</h2>
+      <p class="muted">確定日がその日で、来店の記録が無い予約を出します。</p>
+      <input id="past-date" type="date">
+      <div id="past"></div>
+    </section>
+  </main>
+  <script type="module" src="/static/desk.js"></script>
+</body>
+</html>

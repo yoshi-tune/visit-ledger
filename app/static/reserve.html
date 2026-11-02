@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>予約の希望</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header>
+    <h1>予約の希望</h1>
+    <div class="sub">見本の店のページです。店から電話で日時を確定します</div>
+  </header>
+  <main>
+    <form id="form" class="card">
+      <label for="menu">メニュー</label>
+      <select id="menu" required></select>
+      <label for="requested_for">希望の日時</label>
+      <input id="requested_for" type="datetime-local" required>
+      <label for="name">お名前</label>
+      <input id="name" autocomplete="name" required>
+      <label for="phone">電話番号</label>
+      <input id="phone" type="tel" autocomplete="tel" required>
+      <p><button id="submit" type="submit">希望を送る</button></p>
+      <p id="error" class="error"></p>
+    </form>
+  </main>
+  <script type="module" src="/static/reserve.js"></script>
+</body>
+</html>

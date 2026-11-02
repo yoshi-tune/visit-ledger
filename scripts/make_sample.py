@@ -27,7 +27,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from app import ledger  # noqa: E402
-from app.config import DB_PATH, PERIOD_FROM, PERIOD_TO, STORE_ID, TODAY  # noqa: E402
+from app.config import DB_PATH, PERIOD_FROM, PERIOD_TO, SAMPLE_FROM, SAMPLE_TO, STORE_ID, TODAY  # noqa: E402
 
 SEED = 20261102
 STORE_NAME = "駅前店"
@@ -73,7 +73,7 @@ def bucket_of(lead_days: int) -> int:
 
 
 def day_weights(src: str) -> list[float]:
-    days = (PERIOD_TO - PERIOD_FROM).days + 1
+    days = (SAMPLE_TO - SAMPLE_FROM).days + 1
     if src == "flyer":  # 月初に配って、少しずつ減る
         return [math.exp(-d / 10) for d in range(days)]
     sends = (2, 16)  # LINE は 10/3 と 10/17 に配信。開かれるのは配信直後に集中
@@ -108,12 +108,12 @@ def build(out: Path, plant: bool) -> None:
     for src in SRC_ORDER:
         weights = day_weights(src)
         for _ in range(SOURCES[src]["sessions"]):
-            d = PERIOD_FROM + timedelta(days=rng.choices(range(len(weights)), weights)[0])
+            d = SAMPLE_FROM + timedelta(days=rng.choices(range(len(weights)), weights)[0])
             start = at_time(d, rng.randint(8, 21), rng.randint(0, 59))
             sessions.append({"src": src, "campaign": CAMPAIGN, "start": start})
     # 施策不明（古いチラシの URL など）
     for _ in range(2):
-        d = PERIOD_FROM + timedelta(days=rng.randint(5, 25))
+        d = SAMPLE_FROM + timedelta(days=rng.randint(5, 25))
         sessions.append({"src": "flyer", "campaign": "oldflyer_202609",
                          "start": at_time(d, rng.randint(9, 20), rng.randint(0, 59))})
     sessions.sort(key=lambda s: (s["start"], s["src"], s["campaign"]))
