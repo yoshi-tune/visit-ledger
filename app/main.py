@@ -37,6 +37,15 @@ app = FastAPI(title="visit-ledger")
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
 
+@app.middleware("http")
+async def no_stale_pages(request, call_next):
+    # 画面と JS・CSS は毎回確かめてから使わせる（古い画面と新しい JS が混ざらないように）
+    response = await call_next(request)
+    if not request.url.path.startswith("/api/"):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
 def get_conn() -> Iterator[sqlite3.Connection]:
     conn = ledger.connect(config.DB_PATH)
     try:
