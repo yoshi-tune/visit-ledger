@@ -7,24 +7,36 @@
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-  <header>
-    <h1>施策の効果 <span id="store" class="muted"></span></h1>
-    <div class="sub" id="period"></div>
-    <nav><a href="/desk">受付</a><a href="/dashboard">効果の画面</a></nav>
+  <header class="app-header">
+    <div class="brand">施策の効果<small id="store"></small></div>
+    <nav class="app-nav"><a href="/desk">受付</a><a href="/dashboard" aria-current="page">効果</a></nav>
   </header>
-  <main>
-    <p id="note" class="note"></p>
-    <div id="campaigns" class="grid2"></div>
+  <main class="app-main">
+    <div class="toolbar">
+      <div>
+        <h1 style="font-size:1.25rem">秋の点検キャンペーン</h1>
+        <div class="muted" id="period"></div>
+      </div>
+      <span class="today-chip" id="asof"></span>
+    </div>
+    <p id="note" class="banner"></p>
+
+    <div id="kpis" class="kpis"></div>
+    <div id="funnels" class="two"></div>
     <p id="unknown" class="muted"></p>
 
-    <section class="card">
-      <h2>Claude に分析を頼む</h2>
-      <p class="muted">台帳の書き出し（名前・電話を含まない列だけ）とこの画面の数字を渡し、Claude が集計を重ねて調べます。</p>
-      <button id="ask">分析を頼む</button>
-      <p id="status" class="muted"></p>
-      <div id="report"></div>
+    <section class="card" style="margin-top:16px">
+      <div class="analysis-head">
+        <div>
+          <h2>Claude に分析を頼む</h2>
+          <p class="muted">台帳の書き出し（名前・電話を含まない列だけ）とこの画面の数字を渡し、Claude が集計を重ねて調べます。</p>
+        </div>
+        <button id="ask" class="btn">分析を頼む</button>
+      </div>
+      <div id="status" class="analysis-status"></div>
+      <div id="report" class="report"></div>
     </section>
-    <p id="error" class="error"></p>
+    <p id="error" class="input-error"></p>
   </main>
   <script type="module" src="/static/dashboard.js"></script>
 </body>

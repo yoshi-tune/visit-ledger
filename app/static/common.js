@@ -1,5 +1,5 @@
 // @ts-check
-// 画面どうしで使う小さな道具。API の呼び出しと、日時・割合の表示。
+// 画面どうしで使う小さな道具。API の呼び出し、日時・割合の表示、日にちと時間帯の選び方、知らせ。
 
 /**
  * @param {string} path
@@ -22,12 +22,31 @@ export async function api(path, opts = {}) {
   return body;
 }
 
+const DOW = ["日", "月", "火", "水", "木", "金", "土"];
+
+/** "YYYY-MM-DD" を足し引きする（時差の影響を受けないよう UTC で数える）
+ * @param {string} day @param {number} n */
+export function addDays(day, n) {
+  const d = new Date(`${day}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
+/** @param {string} day */
+export function dow(day) {
+  return DOW[new Date(`${day}T00:00:00Z`).getUTCDay()];
+}
+
+/** "11/7（土）" の形 @param {string} day */
+export function fmtDay(day) {
+  const [, m, d] = day.split("-");
+  return `${Number(m)}/${Number(d)}（${dow(day)}）`;
+}
+
 /** @param {string | null | undefined} iso */
 export function fmtDateTime(iso) {
   if (!iso) return "—";
-  const [d, t] = iso.split("T");
-  const [, m, day] = d.split("-");
-  return `${Number(m)}/${Number(day)} ${t ? t.slice(0, 5) : ""}`.trim();
+  return `${fmtDay(iso.slice(0, 10))} ${iso.slice(11, 16)}`;
 }
 
 /** @param {number | null | undefined} rate */
@@ -60,4 +79,65 @@ export function byId(id) {
   const node = document.getElementById(id);
   if (!node) throw new Error(`#${id} がありません`);
   return node;
+}
+
+/** 画面の下に短い知らせを出す @param {string} msg @param {boolean} [bad] */
+export function toast(msg, bad = false) {
+  const t = el("div", { class: bad ? "toast bad" : "toast", role: "status" }, [msg]);
+  document.body.append(t);
+  setTimeout(() => t.remove(), bad ? 5000 : 2600);
+}
+
+/**
+ * 日にちのボタンの列と、時間帯のボタンの格子を作る。選んだ値は onChange で "YYYY-MM-DDTHH:MM" を返す。
+ * @param {{today: string, days: number, slots: string[], value?: string | null,
+ *   onChange: (value: string | null) => void, pastDays?: number}} opt
+ */
+export function dateTimePicker(opt) {
+  let day = opt.value ? opt.value.slice(0, 10) : "";
+  let slot = opt.value ? opt.value.slice(11, 16) : "";
+  const wrap = el("div", { class: "picker-inner" });
+  const days = el("div", { class: "day-row", role: "group", "aria-label": "日にち" });
+  const slots = el("div", { class: "slot-grid", role: "group", "aria-label": "時間帯" });
+  const emit = () => opt.onChange(day && slot ? `${day}T${slot}` : null);
+
+  const start = -(opt.pastDays || 0);
+  /** @type {string[]} */
+  const list = [];
+  for (let i = start; i < opt.days; i++) list.push(addDays(opt.today, i));
+  if (day && !list.includes(day)) list.unshift(day);
+  for (const d of list) {
+    const w = dow(d);
+    const b = el("button", {
+      type: "button", class: `choice${w === "土" ? " sat" : w === "日" ? " sun" : ""}`,
+      "aria-pressed": String(d === day),
+    }, [
+      el("span", { class: "dow" }, [d === opt.today ? "今日" : w]),
+      el("span", { class: "date" }, [`${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`]),
+    ]);
+    b.addEventListener("click", () => {
+      day = d;
+      for (const x of days.children) x.setAttribute("aria-pressed", String(x === b));
+      emit();
+    });
+    days.append(b);
+  }
+  const slotList = [...opt.slots];
+  if (slot && !slotList.includes(slot)) slotList.push(slot);
+  for (const s of slotList) {
+    const b = el("button", { type: "button", class: "choice", "aria-pressed": String(s === slot) }, [s]);
+    b.addEventListener("click", () => {
+      slot = s;
+      for (const x of slots.children) x.setAttribute("aria-pressed", String(x === b));
+      emit();
+    });
+    slots.append(b);
+  }
+  wrap.append(days, slots);
+  // 選んである日にちが見えるように横に送る
+  requestAnimationFrame(() => {
+    const on = days.querySelector('[aria-pressed="true"]');
+    if (on) /** @type {HTMLElement} */ (on).scrollIntoView({ inline: "center", block: "nearest" });
+  });
+  return wrap;
 }

@@ -101,6 +101,9 @@ def get_config(conn: sqlite3.Connection = Depends(get_conn)) -> dict:
         "today": config.TODAY.isoformat(),
         "store": store,
         "menus": list(ledger.MENUS),
+        # 予約の希望で選べる時間帯と日数（空き枠の管理はしない。確定は店から電話）
+        "slots": ["10:00", "11:00", "13:00", "14:00", "15:00", "16:00"],
+        "days_ahead": 14,
         "staff": ["A", "B"],
         "period": {"from": config.PERIOD_FROM.isoformat(), "to": config.PERIOD_TO.isoformat()},
     }

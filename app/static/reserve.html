@@ -2,29 +2,25 @@
 <html lang="ja">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>予約の希望</title>
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-  <header>
-    <h1>予約の希望</h1>
-    <div class="sub">見本の店のページです。店から電話で日時を確定します</div>
-  </header>
-  <main>
-    <form id="form" class="card">
-      <label for="menu">メニュー</label>
-      <select id="menu" required></select>
-      <label for="requested_for">希望の日時</label>
-      <input id="requested_for" type="datetime-local" required>
-      <label for="name">お名前</label>
-      <input id="name" autocomplete="name" required>
-      <label for="phone">電話番号</label>
-      <input id="phone" type="tel" autocomplete="tel" required>
-      <p><button id="submit" type="submit">希望を送る</button></p>
-      <p id="error" class="error"></p>
-    </form>
-  </main>
+  <div class="phone">
+    <header class="phone-header">
+      <div class="shop"><span id="store-name">見本の店</span><small>予約の希望</small></div>
+      <div id="progress" class="progress" aria-label="進み具合"></div>
+    </header>
+    <main class="phone-main">
+      <div id="step" class="step"></div>
+      <p id="error" class="input-error" role="alert"></p>
+    </main>
+    <div class="sticky-cta"><div>
+      <button id="next" class="btn block lg" type="button">次へ</button>
+      <button id="back" class="link-btn" type="button">← もどる</button>
+    </div></div>
+  </div>
   <script type="module" src="/static/reserve.js"></script>
 </body>
 </html>

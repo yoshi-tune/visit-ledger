@@ -2,21 +2,32 @@
 <html lang="ja">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>希望を受け付けました</title>
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-  <header><h1>希望を受け付けました</h1></header>
-  <main>
-    <section class="card">
-      <p>予約番号</p>
-      <p id="no" class="big">—</p>
-      <p id="detail"></p>
-      <p>店から確定の連絡をします。来店の時に、この予約番号かお名前を伝えてください。</p>
-      <p id="error" class="error"></p>
-    </section>
-  </main>
+  <div class="phone">
+    <header class="phone-header">
+      <div class="shop"><span id="store-name">見本の店</span><small>予約の希望</small></div>
+    </header>
+    <main class="phone-main">
+      <div class="done-mark" aria-hidden="true">✓</div>
+      <h1 style="text-align:center;font-size:1.375rem">希望を受け付けました</h1>
+      <p style="text-align:center" class="muted">店から電話で日時を確定します。</p>
+      <div class="ticket">
+        <div class="muted">予約番号</div>
+        <div id="no" class="no">—</div>
+      </div>
+      <dl id="summary" class="summary"></dl>
+      <h2 class="section-title">このあと</h2>
+      <ol class="info-list">
+        <li><span class="badge-num">1</span><div><b>店から電話があります</b><br><span class="muted">空き状況を見て、日時を決めます</span></div></li>
+        <li><span class="badge-num">2</span><div><b>来店の時に</b><br><span class="muted">受付でお名前か予約番号を伝えてください。この画面を撮っておくと安心です</span></div></li>
+      </ol>
+      <p id="error" class="input-error"></p>
+    </main>
+  </div>
   <script type="module" src="/static/done.js"></script>
 </body>
 </html>

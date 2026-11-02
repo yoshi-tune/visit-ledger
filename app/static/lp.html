@@ -2,28 +2,35 @@
 <html lang="ja">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>秋の点検キャンペーン</title>
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-  <header>
-    <h1 id="store-name">（見本の店）</h1>
-    <div class="sub">見本の店のページです</div>
-  </header>
-  <main>
-    <section class="lp-hero">
-      <h2>秋の点検キャンペーン</h2>
-      <p>冬の前に、オイル交換・タイヤ交換・点検をまとめてどうぞ。</p>
-    </section>
-    <section class="card">
-      <h2>受け付けているメニュー</h2>
-      <ul id="menus"></ul>
-      <button id="reserve">予約の希望を送る</button>
-      <p class="muted">希望を受け付けたあと、店から電話で日時を確定します。</p>
-      <p id="error" class="error"></p>
-    </section>
-  </main>
+  <div class="phone">
+    <header class="phone-header">
+      <div class="shop"><span id="store-name">見本の店</span><small>見本の店のページです</small></div>
+    </header>
+    <main class="phone-main">
+      <section class="hero">
+        <div class="eyebrow">10/1 〜 11/15</div>
+        <h1>秋の点検キャンペーン</h1>
+        <p>冬が来る前に、クルマの点検をまとめて。ネットで希望を送るだけで、店から日時の連絡をします。</p>
+      </section>
+
+      <h2 class="section-title">メニューを選んで予約</h2>
+      <div id="menus" class="choice-list"></div>
+
+      <h2 class="section-title">予約の流れ</h2>
+      <ol class="info-list">
+        <li><span class="badge-num">1</span><div><b>希望を送る</b><br><span class="muted">メニューと希望の日時を選びます（1分ほど）</span></div></li>
+        <li><span class="badge-num">2</span><div><b>店から電話で確定</b><br><span class="muted">空き状況を見て、日時を決めます</span></div></li>
+        <li><span class="badge-num">3</span><div><b>来店</b><br><span class="muted">受付でお名前か予約番号を伝えてください</span></div></li>
+      </ol>
+      <p id="error" class="input-error"></p>
+    </main>
+    <div class="sticky-cta"><div><button id="reserve" class="btn block lg">予約の希望を送る</button></div></div>
+  </div>
   <script type="module" src="/static/lp.js"></script>
 </body>
 </html>
