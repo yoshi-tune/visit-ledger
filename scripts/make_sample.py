@@ -51,8 +51,8 @@ MENU_SHARE = (("オイル交換", 0.40), ("タイヤ交換", 0.35), ("秋の点�
 
 N_REQUESTED = 2     # 店から未連絡のまま
 N_TODAY = 3         # 確定日が「今日」（受付の一覧に出す）
-N_DECLINED = 3
-N_CANCELLED = 4
+# 受けられない・取消の件数（媒体, 受けられない, 取消）。媒体に偏ると、仕込みに無い傾向になる
+DECLINED_CANCELLED = (("flyer", 1, 2), ("line", 2, 2))
 N_RESCHEDULED = 10
 N_LATE_RECORD = 2   # 押し忘れて翌日に記録した来店
 N_UNDO = 1          # 間違えて付けて取り消した来店
@@ -174,12 +174,14 @@ def build(out: Path, plant: bool) -> None:
               and 1 <= (TODAY - x["created"].date()).days <= 14][:N_TODAY]:
         d["kind"] = "today"
         d["confirmed_for"] = at_time(TODAY, rng.choice((10, 13, 15)))
-    rest = [d for d in plain if d["kind"] == "confirmed" and bucket_of(d["lead"]) < 2]
-    picked = rng.sample(rest, N_DECLINED + N_CANCELLED)
-    for d in picked[:N_DECLINED]:
-        d["kind"] = "declined"
-    for d in picked[N_DECLINED:]:
-        d["kind"] = "cancelled"
+    for src, n_declined, n_cancelled in DECLINED_CANCELLED:
+        rest = [d for d in plain if d["src"] == src and d["kind"] == "confirmed"
+                and bucket_of(d["lead"]) < 2]
+        picked = rng.sample(rest, n_declined + n_cancelled)
+        for d in picked[:n_declined]:
+            d["kind"] = "declined"
+        for d in picked[n_declined:]:
+            d["kind"] = "cancelled"
     confirmed = [d for d in drafts if d["kind"] in ("confirmed", "today")]
     for d in rng.sample(confirmed, N_RESCHEDULED):
         d["rescheduled"] = True
