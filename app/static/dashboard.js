@@ -2,6 +2,7 @@
 // 効果の画面：媒体ごとの来店率（数字の札）、LP から予約までの漏斗（横棒）、予約の内訳。
 // 分析の依頼と、結果・実行の記録の表示。
 import { api, byId, el, fmtDay, fmtRate, srcLabel } from "./common.js";
+import { say } from "./mascot.js";
 
 const ask = /** @type {HTMLButtonElement} */ (byId("ask"));
 
@@ -130,17 +131,30 @@ function renderReport(run) {
   byId("report").replaceChildren(...out);
 }
 
-const STATUS = { queued: "受け付けました", running: "Claude が台帳を調べています", done: "分析が終わりました", failed: "分析できませんでした" };
+/** 案内役のひと言（分析の進み具合に合わせて表情を変える） @param {any} run */
+function guide(run) {
+  const tools = (run.tool_log || []).filter((/** @type {any} */ e) => e.kind === "tool").length;
+  if (run.status === "queued" || run.status === "running") {
+    const text = el("span", { class: "row", style: "display:flex;gap:8px;align-items:center" }, [
+      el("span", { class: "spinner", "aria-hidden": "true" }),
+      `Claude が台帳を調べています…${tools ? `（集計の実行 ${tools}回）` : ""}`,
+    ]);
+    return say(text, "think");
+  }
+  if (run.status === "done" && run.report) {
+    const changed = run.report.first_view !== run.report.revised_view;
+    return say(changed
+      ? "調べ終わりました！集計を重ねて、見立てが変わりました。次の一手は下にまとめましたよ。"
+      : "調べ終わりました。見立ては変わりませんでしたが、根拠と次の一手は下にまとめましたよ。", "cheer");
+  }
+  return say("うまく調べられませんでした。理由は下に書いてあります。", "think");
+}
 
 /** @param {string} id */
 async function poll(id) {
   const run = await api(`/api/analysis/${encodeURIComponent(id)}`);
-  const tools = (run.tool_log || []).filter((/** @type {any} */ e) => e.kind === "tool").length;
   const busy = run.status === "queued" || run.status === "running";
-  byId("status").replaceChildren(
-    ...(busy ? [el("span", { class: "spinner", "aria-hidden": "true" })] : []),
-    el("span", {}, [`${STATUS[/** @type {keyof typeof STATUS} */ (run.status)] || run.status}${tools ? `（集計の実行 ${tools}回）` : ""}`]),
-  );
+  byId("status").replaceChildren(guide(run));
   renderReport(run);
   if (busy) {
     setTimeout(() => poll(id), 3000);
@@ -167,6 +181,7 @@ async function main() {
   const conf = await api("/api/config");
   if (conf.store) byId("store").textContent = conf.store.name;
   await loadFunnel();
+  byId("status").replaceChildren(say("数字の裏側を、Claude といっしょに調べますよ。終わったら次の一手をお届けします。", "normal"));
   const last = sessionStorage.getItem("vl:analysis");
   if (last) await poll(last).catch(() => sessionStorage.removeItem("vl:analysis"));
 }

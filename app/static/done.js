@@ -1,6 +1,9 @@
 // @ts-check
 // 受付の完了：予約番号とメニュー・希望日時だけを出す（名前・電話は出さない）。
 import { api, byId, el, fmtDateTime } from "./common.js";
+import { say } from "./mascot.js";
+
+byId("guide").append(say("ありがとうございます！店からの電話を待っていてくださいね。", "cheer", { size: 110, cls: "center" }));
 
 const no = decodeURIComponent(location.pathname.split("/").pop() || "");
 

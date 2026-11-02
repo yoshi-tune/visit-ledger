@@ -2,6 +2,7 @@
 // 予約の希望：1画面に1問。メニュー → 日にち → 時間 → お名前・電話 → 確認 の順に進む。
 // フォームはセッション番号と送信キーだけを持ち、施策はサーバーがセッションから決める。
 import { addDays, api, byId, dow, el, fmtDay } from "./common.js";
+import { say } from "./mascot.js";
 
 const params = new URLSearchParams(location.search);
 const sessionId = params.get("s") || "";
@@ -30,9 +31,9 @@ const next = /** @type {HTMLButtonElement} */ (byId("next"));
 const back = /** @type {HTMLButtonElement} */ (byId("back"));
 const error = byId("error");
 
-/** @param {string} title @param {string} lead @param {Node[]} body */
-function screen(title, lead, body) {
-  stepBox.replaceChildren(el("h1", {}, [title]), el("p", { class: "lead" }, [lead]), ...body);
+/** @param {string} title @param {string} lead @param {Node[]} body @param {"normal" | "happy"} [mood] */
+function screen(title, lead, body, mood = "normal") {
+  stepBox.replaceChildren(el("h1", {}, [title]), say(lead, mood, { size: 64 }), ...body);
 }
 
 /** 選ぶボタンの一覧 @param {{value: string, title: string, desc?: string, cls?: string}[]} items
@@ -63,7 +64,7 @@ function render() {
   next.textContent = step === "confirm" ? "この内容で希望を送る" : "次へ";
 
   if (step === "menu") {
-    screen("メニューを選んでください", "あとから店との電話で変えることもできます。",
+    screen("メニューを選んでください", "あとで店との電話で変えることもできます。気軽に選んでくださいね。",
       [choices(conf.menus.map((/** @type {string} */ m) => ({ value: m, title: m })), state.menu, (v) => { state.menu = v; }, "choice-list")]);
   } else if (step === "day") {
     const items = [];
@@ -76,7 +77,7 @@ function render() {
     screen("ご希望の日は？", "店から電話で確定します。だいたいの希望で大丈夫です。",
       [choices(items, state.day, (v) => { state.day = v; }, "choice-list day-list")]);
   } else if (step === "slot") {
-    screen("ご希望の時間は？", `${fmtDay(state.day)} の希望の時間を選んでください。`,
+    screen("ご希望の時間は？", `${fmtDay(state.day)} ですね。時間も、店からの電話で調整できますよ。`,
       [choices(conf.slots.map((/** @type {string} */ s) => ({ value: s, title: s })), state.slot, (v) => { state.slot = v; }, "slot-grid")]);
   } else if (step === "contact") {
     const name = /** @type {HTMLInputElement} */ (el("input", { class: "input", id: "name", autocomplete: "name", enterkeyhint: "next" }));
@@ -85,17 +86,17 @@ function render() {
     phone.value = state.phone;
     name.addEventListener("input", () => { state.name = name.value.trim(); update(); });
     phone.addEventListener("input", () => { state.phone = phone.value.trim(); update(); });
-    screen("ご連絡先", "日時を確定する電話をかけるために使います。",
+    screen("ご連絡先", "日時を決める電話をかけるためだけに使います。",
       [el("label", { class: "field" }, [el("span", {}, ["お名前"]), name]),
        el("label", { class: "field" }, [el("span", {}, ["電話番号"]), phone])]);
   } else {
     const row = (/** @type {string} */ k, /** @type {string} */ v) => el("div", {}, [el("dt", {}, [k]), el("dd", {}, [v])]);
-    screen("この内容で送ります", "送ったあと、店から電話で日時を確定します。", [
+    screen("この内容で送ります", "これで大丈夫なら、下のボタンで送ってくださいね。", [
       el("dl", { class: "summary" }, [
         row("メニュー", state.menu), row("希望の日時", `${fmtDay(state.day)} ${state.slot}`),
         row("お名前", state.name), row("電話番号", state.phone),
       ]),
-    ]);
+    ], "happy");
   }
   update();
   window.scrollTo({ top: 0 });

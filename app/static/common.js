@@ -81,9 +81,9 @@ export function byId(id) {
   return node;
 }
 
-/** 画面の下に短い知らせを出す @param {string} msg @param {boolean} [bad] */
-export function toast(msg, bad = false) {
-  const t = el("div", { class: bad ? "toast bad" : "toast", role: "status" }, [msg]);
+/** 画面の下に短い知らせを出す @param {string} msg @param {boolean} [bad] @param {Node} [icon] */
+export function toast(msg, bad = false, icon) {
+  const t = el("div", { class: bad ? "toast bad" : "toast", role: "status" }, icon ? [icon, msg] : [msg]);
   document.body.append(t);
   setTimeout(() => t.remove(), bad ? 5000 : 2600);
 }

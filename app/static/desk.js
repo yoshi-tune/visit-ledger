@@ -2,6 +2,16 @@
 // 受付：店の確定・受けられない・取消、来店の記録と取り消し、名前での検索、押し忘れの後日記録。
 // 名前での検索は画面の中だけで行う（名前を URL やログに出さない）。
 import { addDays, api, byId, dateTimePicker, el, fmtDateTime, fmtDay, srcLabel, toast } from "./common.js";
+import { mascot, say } from "./mascot.js";
+
+/** 一覧が空の時のひと言 */
+const EMPTY = {
+  requested: ["未連絡はゼロです。おつかれさまです！", "cheer"],
+  today: ["今日の予約は、ほかにありません。", "normal"],
+  visited: ["今日の来店はまだありません。", "normal"],
+  search: ["見つかりませんでした。別の書き方でも探してみてください。", "think"],
+  past: ["この日の記録漏れはありません。", "happy"],
+};
 
 /** @typedef {{reserve_no: string, menu: string, requested_for: string, confirmed_for: string | null,
  *   status: string, src: string, customer_name: string, customer_phone: string,
@@ -29,11 +39,11 @@ let openPicker = "";
 
 const day = (/** @type {string | null} */ iso) => (iso || "").slice(0, 10);
 
-/** @param {string} path @param {object} body @param {string} done @param {string} [method] */
-async function act(path, body, done, method) {
+/** @param {string} path @param {object} body @param {string} done @param {string} [method] @param {boolean} [cheer] */
+async function act(path, body, done, method, cheer = false) {
   try {
     await api(path, { json: { staff, ...body }, method });
-    toast(done);
+    toast(done, false, cheer ? mascot("cheer", 30) : undefined);
     openPicker = "";
     await load();
   } catch (e) {
@@ -73,14 +83,14 @@ function card(r) {
 
   if (tab === "past") {
     actions.append(btn(`${fmtDay(pastDay)} に来店`, () => act("/api/visits",
-      { reserve_no: r.reserve_no, visited_on: pastDay }, `${r.customer_name} 様の来店を ${fmtDay(pastDay)} に記録しました`), "btn btn block"));
+      { reserve_no: r.reserve_no, visited_on: pastDay }, `${r.customer_name} 様の来店を ${fmtDay(pastDay)} に記録しました`, undefined, true), "btn block"));
     return box;
   }
   if (r.status === "requested") {
     actions.append(btn("日時を決めて確定", () => { openPicker = openPicker === r.reserve_no ? "" : r.reserve_no; render(); }, "btn"));
   }
   if (r.status === "confirmed") {
-    actions.append(btn("来店", () => act("/api/visits", { reserve_no: r.reserve_no }, `${r.customer_name} 様の来店を記録しました`), "btn lg"));
+    actions.append(btn("来店", () => act("/api/visits", { reserve_no: r.reserve_no }, `${r.customer_name} 様、いらっしゃいませ！来店を記録しました`, undefined, true), "btn lg"));
     actions.append(btn("日時を変える", () => { openPicker = openPicker === r.reserve_no ? "" : r.reserve_no; render(); }, "btn soft"));
   }
   if (r.status === "visited") {
@@ -172,7 +182,16 @@ function render() {
 
   const list = byId("list");
   list.replaceChildren(...(rows.length ? rows.map(card)
-    : [el("div", { class: "empty", style: "grid-column:1/-1" }, [tab === "search" && !query ? "お名前を入れてください" : "ありません"])]));
+    : [emptyState()]));
+}
+
+function emptyState() {
+  const [text, mood] = tab === "search" && !query
+    ? ["お名前の一部を入れると探せますよ。", "normal"]
+    : EMPTY[/** @type {keyof typeof EMPTY} */ (tab)];
+  return el("div", { class: "empty", style: "grid-column:1/-1" }, [
+    say(text, /** @type {"normal" | "happy" | "think" | "cheer"} */ (mood), { size: 96, cls: "center" }),
+  ]);
 }
 
 async function load() {

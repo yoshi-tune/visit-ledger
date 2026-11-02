@@ -2,6 +2,7 @@
 // LP：開いた時にサーバーでセッションを作る。同じタブで同じ施策の URL なら同じセッションを使い直す。
 // メニューを押しても、下のボタンを押しても「予約ボタンのタップ」として1回記録して予約へ進む。
 import { api, byId, el } from "./common.js";
+import { say } from "./mascot.js";
 
 const MENU_DESC = {
   "オイル交換": "エンジンオイルの交換（30分ほど）",
@@ -33,6 +34,7 @@ async function main() {
     byId("store-name").textContent = conf.store.name;
     document.title = `秋の点検キャンペーン｜${conf.store.name}`;
   }
+  byId("guide").append(say("ネットで希望を送るだけ。日時は店から電話で決めますよ。", "happy"));
   const list = byId("menus");
   for (const m of conf.menus) {
     const b = el("button", { type: "button", class: "choice" }, [
