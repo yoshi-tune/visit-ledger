@@ -153,7 +153,7 @@ visit-ledger は、施策の URL から予約の希望・店での確定・来�
 | `reservations` | `reserve_no`, `submit_key`, `session_id`, `campaign`, `src`, `store_id`, `menu`, `requested_for`, `confirmed_for`, `status`, `handled_by`, `created_at`, `updated_at`, `customer_name`, `customer_phone` | `submit_key` は一意。施策はセッションから写す |
 | `reservation_changes` | `id`, `reserve_no`, `at`, `from_status`, `to_status`, `confirmed_for`, `handled_by` | 状態と確定日時の変更の履歴（誰がいつ変えたか） |
 | `visits` | `reserve_no`, `visited_at`, `recorded_at` | `reserve_no` で一意。`recorded_at` で押し忘れを後から記録したと分かる |
-| `analysis_runs` | `analysis_id`, `as_of`, `status`, `export_csv`, `funnel_json`, `tool_log`, `report_json` | 分析ごとに、渡したものと実行の記録を固定して残す |
+| `analysis_runs` | `analysis_id`, `as_of`, `status`, `export_csv`, `id_map_json`, `funnel_json`, `tool_log`, `report_json` | 分析ごとに、渡したもの・仮の番号の対応表・実行の記録を固定して残す。`id_map_json` は外に出さない |
 
 決まり：
 
@@ -191,8 +191,9 @@ visit-ledger は、施策の URL から予約の希望・店での確定・来�
 
 - URL とログに入れてよいのは、店・施策・媒体・セッション番号・予約番号だけ
 - 車番・LINE ID は集めない。名前と電話は、店がお客様に連絡し、受付で本人を確かめるためだけに持つ
-- Claude に渡すのは、**書き出しの関数1つが許可した列だけ** と、アプリの集計値。名前・電話・担当（`handled_by`）・送信キーは許可しない
-- 予約番号などの識別子は残るので、「匿名化した」とは言わない。「指定した列だけの書き出し」と呼ぶ
+- Claude に渡すのは、**書き出しの関数1つが許可した列だけ** と、アプリの集計値（列は §8「渡すもの」）。名前・電話・担当（`handled_by`）・送信キーは許可しない
+- 予約番号とセッション番号は、書き出すたびに **仮の番号** に置き換える。対応表はアプリの中（`analysis_runs`）にだけ置き、外に出さない
+- それでも日時などから台帳の予約と突き合わせられるので、「匿名化した」とは言わない。「指定した列だけの書き出し」と呼ぶ
 
 ## 8. 分析エージェント（Claude Managed Agents）
 
@@ -204,8 +205,22 @@ visit-ledger は、施策の URL から予約の希望・店での確定・来�
 
 ### 渡すもの
 
-1. 許可した列だけの台帳の書き出し（CSV）。基準日時つき
-2. アプリが計算した漏斗と予約の内訳（JSON）。同じ読み取りから作る
+1. 許可した列だけの台帳の書き出し（表ごとに CSV を1つ）
+2. アプリが計算した漏斗と予約の内訳（JSON）。施策期間・基準日（`as_of`）つき。1と同じ読み取りから作る
+
+| CSV | 渡す列 | 何に使うか |
+|---|---|---|
+| `sessions.csv` | `session_id`※, `started_at`, `campaign`, `src`, `store_id` | 漏斗の検算（予約しなかったセッションも含む） |
+| `events.csv` | `session_id`※, `at`, `name` | 予約ボタンを押したセッションの検算 |
+| `reservations.csv` | `reserve_no`※, `session_id`※, `campaign`, `src`, `store_id`, `menu`, `requested_for`, `confirmed_for`, `status`, `created_at` | 予約の内訳の検算、予約から確定日までの日数（仕込み） |
+| `visits.csv` | `reserve_no`※, `visited_at`, `recorded_at` | 来店の検算、押し忘れの後日記録 |
+| `reservation_changes.csv` | `reserve_no`※, `at`, `from_status`, `to_status`, `confirmed_for` | 日時の変更と来店未記録の関係を確かめる |
+| `campaigns.csv` | `campaign`, `src`, `store_id`, `distributed`, `started_on`, `ended_on` | 施策期間と、参考としての配った数 |
+
+※ は仮の番号（例：`S0001`・`R001`）。セッションは開始日時の順、予約は作った日時の順に振り直し、表どうしのつながりは保つ。
+渡さない列：`customer_name`・`customer_phone`・`handled_by`・`submit_key`・`updated_at`・実際の予約番号とセッション番号。
+
+エージェントへの指示：配った数は参考の値で、漏斗の分母にしない。履歴から言えることも観測までにとどめ、原因は仮説として書く。
 
 ### 調べ方
 
@@ -299,7 +314,7 @@ visit-ledger/
 
 | 日 | やること |
 |---|---|
-| 11/2（月） | 設計書の確定 → Claude に渡す列を決める → 見本データの生成スクリプト |
+| 11/2（月） | 設計書の確定・Claude に渡す列の決定（済） → 見本データの生成スクリプト |
 | 11/3（火・祝） | ワークショップの後、小さな台帳の書き出しでエージェントを動かす。§8 の確かめることを片付け、エージェントか予備かを決める |
 | 11/4（水） | 台帳（保存の層・状態の決まり）・LP・予約の希望 |
 | 11/5（木） | 作業なし |
@@ -311,9 +326,8 @@ visit-ledger/
 
 ## 11. まだ決めていないこと
 
-決める順番は **見つけたい事実（§6 の仕込みで決定）→ 正しい集計の条件 → 渡す表と列 → 見本データ → デモの日時**。
+決める順番は **見つけたい事実（§6 の仕込みで決定）→ 正しい集計の条件（§3 で決定）→ 渡す表と列（§8 で決定）→ 見本データ → デモの日時**。
 
-- **Claude に渡す表と列**… 11/2 中に決める。漏斗を検算できるよう、予約しなかったセッションとタップも含める必要がある
 - メニューの一覧と施策コードの具体的な値
 - 画面の文言（LP・予約の希望・受付・効果の画面）
 - できれば、整備の店で働く人に聞く：今の突き合わせにかかる時間、電話での日程の変更、来店の記録を誰がするか、今の台帳への2重入力、受付で1件10秒の操作を足せるか。聞けなければ、現場の事実としては書かず仮説として残す
