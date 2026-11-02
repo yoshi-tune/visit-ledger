@@ -98,7 +98,10 @@ export function guide(run) {
     return say(text, "work");
   }
   if (run.status === "done" && run.report) {
-    const changed = run.report.first_view !== run.report.revised_view;
+    // 項目が無い前の報告だけ、文字の比較で代わりにする
+    const changed = typeof run.report.view_changed === "boolean"
+      ? run.report.view_changed
+      : run.report.first_view !== run.report.revised_view;
     return say(changed
       ? "調べ終わりました！集計を重ねて、見立てが変わりました。気になることは、チャットで続けて聞いてくださいね。"
       : "調べ終わりました。見立ては変わりませんでしたが、根拠と次の一手をまとめました。気になることは、チャットで聞いてくださいね。", "cheer");

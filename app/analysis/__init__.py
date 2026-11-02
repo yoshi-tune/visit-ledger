@@ -18,8 +18,10 @@ import uuid
 
 from app import config, export, ledger
 
-REQUIRED_KEYS = ("reconciliation", "first_view", "revised_view", "observations", "hypotheses",
-                 "next_action")
+# 報告の形（エージェントにも同じファイルを渡している）
+REPORT_SCHEMA = json.loads((config.ROOT / "agent" / "report_schema.json").read_text(encoding="utf-8"))
+# 基準（rubric）の件数の上限。超えても失敗にはせず、記録に注意として残す（採点が先に見ている）
+LIMITS = {"observations": 8, "hypotheses": 3, "to_check": 4, "steps": 4}
 
 
 class RunError(Exception):
@@ -97,9 +99,8 @@ def _run(analysis_id: str) -> None:
         model = run["model"] or config.DEFAULT_MODEL
         report = runner.run(analysis_id, files, funnel, on_log, model)
 
-        missing = [k for k in REQUIRED_KEYS if k not in report]
-        if missing:
-            raise RunError(f"報告に足りない項目があります: {', '.join(missing)}")
+        for note in check_report(report, log if mode != "messages" else None):
+            on_log({"kind": "note", "detail": note})
         report["mode"] = mode
         ledger.update_analysis_run(
             conn, analysis_id, status="done", report_json=json.dumps(report, ensure_ascii=False)
@@ -115,6 +116,41 @@ def _run(analysis_id: str) -> None:
             traceback.print_exc()
     finally:
         conn.close()
+
+
+# ---- 報告の検査 ------------------------------------------------------------------
+
+def check_report(report: dict, log: list[dict] | None) -> list[str]:
+    """報告を確かめる。形（report_schema.json）に合わなければ RunError で「失敗」にする。
+    形は合っているが基準から外れる所は、注意の文として返す（記録に残して画面に出す）。
+    log を渡すと、観測の根拠のスクリプト名が、実際に実行したコードに出てくるかも確かめる。"""
+    import jsonschema
+
+    errors = sorted(jsonschema.Draft202012Validator(REPORT_SCHEMA).iter_errors(report),
+                    key=lambda e: list(e.absolute_path))
+    if errors:
+        where = lambda e: "/".join(str(p) for p in e.absolute_path) or "（全体）"
+        lines = [f"{where(e)}: {e.message}" for e in errors[:5]]
+        more = f" ほか{len(errors) - 5}件" if len(errors) > 5 else ""
+        raise RunError("エージェントの報告が決めた形に合いません: " + "／".join(lines) + more)
+
+    notes = []
+    for key, limit in LIMITS.items():
+        if len(report[key]) > limit:
+            notes.append(f"報告の検査：{key} が {len(report[key])} 件（基準は {limit} 件まで）。")
+    for i, o in enumerate(report["observations"], 1):
+        if o["denominator"] <= 0 or o["numerator"] > o["denominator"]:
+            notes.append(f"報告の検査：観測 {i} の分子・分母がおかしい（{o['numerator']}/{o['denominator']}）。")
+        if not o["steps"]:
+            notes.append(f"報告の検査：観測 {i} に根拠のスクリプト名がありません。")
+    if log is not None:
+        ran = json.dumps([e.get("input") for e in log if e.get("kind") == "tool"], ensure_ascii=False)
+        cited = {s for o in report["observations"] for s in o["steps"]} | {s["step"] for s in report["steps"]}
+        unseen = sorted(s for s in cited if re.fullmatch(r"step_\d+", s) and s not in ran)
+        if unseen:
+            notes.append("報告の検査：根拠に挙げたスクリプトのうち、実行の記録に見当たらないもの："
+                         + "、".join(unseen) + "。")
+    return notes
 
 
 # ---- 分析の続きの質問（壁打ち） ------------------------------------------------
@@ -188,12 +224,12 @@ def _resume(analysis_id: str, session_id: str) -> None:
                 break
             time.sleep(15)
         report = agent_runner._fetch_report(client, session_id)
-        missing = [k for k in REQUIRED_KEYS if k not in report]
-        if missing:
-            raise RunError(f"報告に足りない項目があります: {', '.join(missing)}")
+        for note in check_report(report, log):
+            log.append({"kind": "note", "detail": note})
         report["mode"] = "agent"
         ledger.update_analysis_run(conn, analysis_id, status="done",
-                                   report_json=json.dumps(report, ensure_ascii=False))
+                                   report_json=json.dumps(report, ensure_ascii=False),
+                                   tool_log=json.dumps(log, ensure_ascii=False))
         _record_cost(conn, analysis_id)
     except Exception as e:
         message = str(e) if isinstance(e, RunError) else _describe(e)

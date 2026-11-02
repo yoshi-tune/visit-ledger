@@ -1,7 +1,7 @@
 {
   "type": "object",
   "additionalProperties": false,
-  "required": ["as_of", "period", "reconciliation", "first_view", "steps", "revised_view",
+  "required": ["as_of", "period", "reconciliation", "first_view", "steps", "revised_view", "view_changed",
                "observations", "hypotheses", "to_check", "next_action"],
   "properties": {
     "as_of": {"type": "string", "description": "基準日（YYYY-MM-DD）"},
@@ -34,6 +34,7 @@
       }
     },
     "revised_view": {"type": "string", "description": "集計を重ねた後の見立て"},
+    "view_changed": {"type": "boolean", "description": "集計を重ねて、最初の見立ての中身が変わったか（言い回しだけの違いは false）"},
     "observations": {
       "type": "array",
       "items": {

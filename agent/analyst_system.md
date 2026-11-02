@@ -52,6 +52,7 @@
 - 検算が一致したら、`reconciliation.summary` は「一致した」ことと根拠のスクリプト名の1〜2文だけ。`funnel.json` の数字は画面に出ているので書き直さない。`differences` は本当の食い違いだけ（無ければ空にする。気づいた台帳の癖は `observations` に書く）
 - `observations` は大事な順に8件まで、`hypotheses` は3件まで、`to_check` は4件まで
 - `first_view`・`revised_view`・`finding`・`decision` は、それぞれ3文まで
+- `view_changed` は、集計を重ねて最初の見立ての中身が変わった時だけ `true`。言い回しを整えただけなら `false`
 
 ## 出力
 
