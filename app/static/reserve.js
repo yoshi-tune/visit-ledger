@@ -26,11 +26,8 @@ async function main() {
   }
   const conf = await api("/api/config");
   for (const m of conf.menus) menu.append(el("option", { value: m }, [m]));
-  // 希望日時の初期値：「今日」の翌日 10:00
-  const next = new Date(`${conf.today}T10:00:00`);
-  next.setDate(next.getDate() + 1);
-  const pad = (/** @type {number} */ n) => String(n).padStart(2, "0");
-  when.value = `${next.getFullYear()}-${pad(next.getMonth() + 1)}-${pad(next.getDate())}T10:00`;
+  // 希望日時の初期値：「今日」の 15:00（デモでそのまま受付の「今日の確定予約」に出るように）
+  when.value = `${conf.today}T15:00`;
 }
 
 form.addEventListener("submit", async (ev) => {
