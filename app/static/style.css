@@ -30,6 +30,9 @@
   --px-face: #2a1a14;
   --px-mouth: #8f2f1c;
   --px-cheek: #f5c4ae;
+  --px-nut: #c3c9d3;
+  --px-nut-light: #eef1f5;
+  --px-spark: #f2c14e;
   --font: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Meiryo", system-ui, sans-serif;
 }
 
@@ -306,3 +309,32 @@ details > summary { cursor: pointer; font-weight: 700; color: var(--ink-2); padd
 .mood-think svg { animation: sway-px 2s steps(2) infinite; }
 @keyframes hop-px { 0% { transform: translateY(0); } 50% { transform: translateY(-4px); } 100% { transform: translateY(0); } }
 @keyframes sway-px { 0%, 100% { transform: translateX(0); } 50% { transform: translateX(2px); } }
+
+/* ---- 読み込み中：ナットクがナットを締める ---- */
+.mascot { position: relative; }
+/* くわえたナットを中心に、スパナごと回す（締める → 少し戻す、をくり返す） */
+.mood-work svg { transform-origin: 50% 14%; animation: tighten 1.2s cubic-bezier(.3,.7,.3,1) infinite; }
+@keyframes tighten {
+  0%   { transform: rotate(-32deg); }
+  45%  { transform: rotate(4deg); }
+  55%  { transform: rotate(0deg); }
+  100% { transform: rotate(-32deg); }
+}
+.kyu {
+  position: absolute; left: 62%; top: -6%; white-space: nowrap; font-weight: 800; font-size: 0.8125rem;
+  color: var(--accent); line-height: 1; opacity: 0; animation: kyu 1.2s ease-out infinite;
+}
+@keyframes kyu {
+  0%, 40% { opacity: 0; transform: translateY(4px) scale(0.8); }
+  50% { opacity: 1; transform: translateY(0) scale(1.1); }
+  75% { opacity: 1; transform: translateY(-2px) scale(1); }
+  100% { opacity: 0; transform: translateY(-6px); }
+}
+@media (prefers-reduced-motion: reduce) { .mood-work svg, .kyu { animation: none !important; } .kyu { opacity: 1; } }
+.loader { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+.loader-text { color: var(--ink-2); font-weight: 700; }
+.page-loader {
+  position: fixed; inset: 0; z-index: 50; background: var(--bg);
+  display: grid; place-items: center; transition: opacity 0.25s ease;
+}
+.page-loader.out { opacity: 0; pointer-events: none; }

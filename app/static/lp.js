@@ -1,7 +1,7 @@
 // @ts-check
 // LP：開いた時にサーバーでセッションを作る。同じタブで同じ施策の URL なら同じセッションを使い直す。
 // メニューを押しても、下のボタンを押しても「予約ボタンのタップ」として1回記録して予約へ進む。
-import { api, byId, el } from "./common.js";
+import { api, byId, el, pageLoading } from "./common.js";
 import { say } from "./mascot.js";
 
 const MENU_DESC = {
@@ -52,4 +52,4 @@ async function main() {
   byId("reserve").addEventListener("click", () => go());
 }
 
-main().catch((e) => { byId("error").textContent = `読み込めませんでした: ${e.message}`; });
+main().finally(pageLoading()).catch((e) => { byId("error").textContent = `読み込めませんでした: ${e.message}`; });

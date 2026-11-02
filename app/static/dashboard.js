@@ -1,7 +1,7 @@
 // @ts-check
 // 効果の画面：媒体ごとの来店率（数字の札）、LP から予約までの漏斗（横棒）、予約の内訳。
 // 分析の依頼と、結果・実行の記録の表示。
-import { api, byId, el, fmtDay, fmtRate, srcLabel } from "./common.js";
+import { api, byId, el, fmtDay, fmtRate, pageLoading, srcLabel } from "./common.js";
 import { say } from "./mascot.js";
 
 const ask = /** @type {HTMLButtonElement} */ (byId("ask"));
@@ -139,7 +139,7 @@ function guide(run) {
       el("span", { class: "spinner", "aria-hidden": "true" }),
       `Claude が台帳を調べています…${tools ? `（集計の実行 ${tools}回）` : ""}`,
     ]);
-    return say(text, "think");
+    return say(text, "work");
   }
   if (run.status === "done" && run.report) {
     const changed = run.report.first_view !== run.report.revised_view;
@@ -186,4 +186,4 @@ async function main() {
   if (last) await poll(last).catch(() => sessionStorage.removeItem("vl:analysis"));
 }
 
-main().catch((e) => { byId("error").textContent = `読み込めませんでした：${e.message}`; });
+main().finally(pageLoading()).catch((e) => { byId("error").textContent = `読み込めませんでした：${e.message}`; });

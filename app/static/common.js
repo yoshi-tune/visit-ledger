@@ -1,5 +1,6 @@
 // @ts-check
-// 画面どうしで使う小さな道具。API の呼び出し、日時・割合の表示、日にちと時間帯の選び方、知らせ。
+// 画面どうしで使う小さな道具。API の呼び出し、日時・割合の表示、日にちと時間帯の選び方、知らせ、読み込み中の表示。
+import { loader } from "./mascot.js";
 
 /**
  * @param {string} path
@@ -140,4 +141,22 @@ export function dateTimePicker(opt) {
     if (on) days.scrollLeft = on.offsetLeft - days.offsetLeft - (days.clientWidth - on.offsetWidth) / 2;
   });
   return wrap;
+}
+
+/**
+ * 画面を開いた時の読み込み中の表示（ナットクがナットを締める）。
+ * 手元では一瞬で終わるので、最初の読み込みだけ最低 minMs は見せる。返した関数を呼ぶと消える。
+ * @param {number} [minMs]
+ */
+export function pageLoading(minMs = 700) {
+  const started = performance.now();
+  const cover = el("div", { class: "page-loader" }, [loader()]);
+  document.body.append(cover);
+  return () => {
+    const wait = Math.max(0, minMs - (performance.now() - started));
+    setTimeout(() => {
+      cover.classList.add("out");
+      setTimeout(() => cover.remove(), 300);
+    }, wait);
+  };
 }

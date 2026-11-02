@@ -1,7 +1,7 @@
 // @ts-check
 // 予約の希望：1画面に1問。メニュー → 日にち → 時間 → お名前・電話 → 確認 の順に進む。
 // フォームはセッション番号と送信キーだけを持ち、施策はサーバーがセッションから決める。
-import { addDays, api, byId, dow, el, fmtDay } from "./common.js";
+import { addDays, api, byId, dow, el, fmtDay, pageLoading } from "./common.js";
 import { say } from "./mascot.js";
 
 const params = new URLSearchParams(location.search);
@@ -157,4 +157,4 @@ async function main() {
   render();
 }
 
-main().catch((e) => { error.textContent = `読み込めませんでした: ${e.message}`; });
+main().finally(pageLoading()).catch((e) => { error.textContent = `読み込めませんでした: ${e.message}`; });

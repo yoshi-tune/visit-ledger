@@ -1,7 +1,7 @@
 // @ts-check
 // 受付：店の確定・受けられない・取消、来店の記録と取り消し、名前での検索、押し忘れの後日記録。
 // 名前での検索は画面の中だけで行う（名前を URL やログに出さない）。
-import { addDays, api, byId, dateTimePicker, el, fmtDateTime, fmtDay, srcLabel, toast } from "./common.js";
+import { addDays, api, byId, dateTimePicker, el, fmtDateTime, fmtDay, pageLoading, srcLabel, toast } from "./common.js";
 import { mascot, say } from "./mascot.js";
 
 /** 一覧が空の時のひと言 */
@@ -226,4 +226,4 @@ async function main() {
   await load();
 }
 
-main().catch((e) => toast(`読み込めませんでした：${e.message}`, true));
+main().finally(pageLoading()).catch((e) => toast(`読み込めませんでした：${e.message}`, true));
