@@ -1,6 +1,7 @@
 // @ts-check
 // LP：開いた時にサーバーでセッションを作る。同じタブで同じ施策の URL なら同じセッションを使い直す。
 // メニューを押しても、下のボタンを押しても「予約ボタンのタップ」として1回記録して予約へ進む。
+// 「クーポン」はこのセッションのクーポンを出してクーポンの画面へ（もう一度押しても同じ番号）。
 import { api, byId, el, pageLoading } from "./common.js";
 import { say } from "./mascot.js";
 
@@ -50,6 +51,11 @@ async function main() {
     sessionStorage.setItem(key, sessionId);
   }
   byId("reserve").addEventListener("click", () => go());
+  byId("coupon").addEventListener("click", async () => {
+    if (!sessionId) return;
+    const c = await api("/api/coupons", { json: { session_id: sessionId } });
+    location.href = `/coupon/${encodeURIComponent(c.code)}?${new URLSearchParams({ s: sessionId })}`;
+  });
 }
 
 main().finally(pageLoading()).catch((e) => { byId("error").textContent = `読み込めませんでした: ${e.message}`; });

@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>クーポンの受付</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="app-header">
+    <div class="brand">クーポンの受付<small id="store"></small></div>
+    <nav class="app-nav"><a href="/desk">受付</a><a href="/desk/coupon" aria-current="page">クーポン</a><a href="/dashboard">効果</a><a href="/settings">店の設定</a></nav>
+  </header>
+  <main class="app-main" style="max-width:720px">
+    <div class="toolbar">
+      <span class="muted">お客様の QR を店のスマホのカメラで読むか、番号を入力します。開いただけでは記録しません</span>
+      <div class="row" style="display:flex;gap:10px;align-items:center">
+        <span class="muted">担当</span>
+        <div id="staff" class="seg" role="group" aria-label="担当"></div>
+      </div>
+    </div>
+    <form id="find" class="row" style="display:flex;gap:10px;align-items:center;margin:12px 0">
+      <label for="code" class="muted">クーポンの番号</label>
+      <input id="code" name="code" autocomplete="off" maxlength="12" style="font-size:1.25rem;letter-spacing:0.08em;text-transform:uppercase;width:10em">
+      <button class="btn" type="submit">確かめる</button>
+    </form>
+    <div id="guide"></div>
+    <div id="result"></div>
+    <p id="error" class="input-error"></p>
+  </main>
+  <script type="module" src="/static/desk_coupon.js"></script>
+</body>
+</html>

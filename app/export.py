@@ -20,10 +20,12 @@ ALLOWED: dict[str, tuple[str, ...]] = {
     "visits": ("reserve_no", "visited_at", "recorded_at"),
     "reservation_changes": ("reserve_no", "at", "from_status", "to_status", "confirmed_for"),
     "campaigns": ("campaign", "src", "store_id", "distributed", "started_on", "ended_on"),
+    # クーポン1枚に1行。reserve_no は使った時に結んだ予約（予約なしの来店なら空）。番号（code）は出さない
+    "coupons": ("session_id", "issued_at", "redeemed_at", "reserve_no"),
 }
 
 # どの表にあっても出さない列（許可の表を書き換えた時の安全柵）
-FORBIDDEN = ("customer_name", "customer_phone", "handled_by", "submit_key", "updated_at")
+FORBIDDEN = ("customer_name", "customer_phone", "handled_by", "submit_key", "updated_at", "code")
 
 
 def build(snapshot: dict) -> tuple[dict[str, str], dict[str, dict[str, str]]]:
@@ -46,7 +48,7 @@ def build(snapshot: dict) -> tuple[dict[str, str], dict[str, dict[str, str]]]:
         out = dict(row)
         if "session_id" in out:
             out["session_id"] = session_map[out["session_id"]]
-        if "reserve_no" in out:
+        if out.get("reserve_no"):
             out["reserve_no"] = reserve_map[out["reserve_no"]]
         return out
 

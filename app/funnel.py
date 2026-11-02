@@ -10,7 +10,8 @@ from datetime import date
 
 from app.ledger import UNKNOWN
 
-NOTE = "ネット予約で追えた分だけです。電話だけの予約・飛び込みの来店は入っていません"
+NOTE = ("ネット予約で追えた分だけです。電話だけの予約・飛び込みの来店は入っていません"
+        "（LP のクーポンを店で使った予約なしの来店だけは、クーポンの欄に別に数えます）")
 
 STAGES = (
     ("lp_sessions", "LP を開いたセッション"),
@@ -57,6 +58,7 @@ def compute(snapshot: dict, today: date, period_from: date, period_to: date) -> 
             "distributed": c["distributed"],  # 参考の値。分母にしない
             "lp": set(), "tap": set(), "reserved": set(),
             "breakdown": empty_breakdown(),
+            "coupons": {"shown": 0, "used": 0, "used_with_reservation": 0, "used_without_reservation": 0},
         }
 
     for e in snapshot["events"]:
@@ -71,6 +73,17 @@ def compute(snapshot: dict, today: date, period_from: date, period_to: date) -> 
         b = g["breakdown"]
         b["total"] += 1
         b[reservation_state(r, r["reserve_no"] in visited_nos, today)] += 1
+
+    # クーポン：LP で出した数と、店で使った数（予約あり／予約なし）。来店率には入れない
+    for c in snapshot.get("coupons", []):
+        key = session_src.get(c["session_id"])
+        if key is None:
+            continue
+        k = groups[key]["coupons"]
+        k["shown"] += 1
+        if c["redeemed_at"]:
+            k["used"] += 1
+            k["used_with_reservation" if c["reserve_no"] else "used_without_reservation"] += 1
 
     campaigns, unknown = [], None
     for key in sorted(groups):
@@ -88,6 +101,7 @@ def compute(snapshot: dict, today: date, period_from: date, period_to: date) -> 
             "stages": _stages(counts),
             "reservations": b,
             "visit_rate": visit_rate(b["visited"], b["unrecorded"]),
+            "coupons": g["coupons"],
         }
         if key[0] == UNKNOWN:
             unknown = {"lp_sessions": counts["lp_sessions"], "reservations": b["total"]}

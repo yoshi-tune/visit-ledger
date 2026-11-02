@@ -146,6 +146,25 @@ CREATE TABLE IF NOT EXISTS analysis_messages (
 """
 SCHEMA += _MESSAGES_TABLE
 
+# クーポン：LP で「クーポン」を押したセッションに1つ出す（番号は無作為で、何も表さない）。
+# 店で使った時に1回だけ記録する。そのセッションに予約があれば予約番号を結ぶ（無ければ予約なしの来店）。
+# 前の形の台帳にも足せるよう IF NOT EXISTS にする
+_COUPON_TABLES = """
+CREATE TABLE IF NOT EXISTS coupons (
+    code       TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL UNIQUE REFERENCES sessions(session_id),
+    issued_at  TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS coupon_redemptions (
+    code        TEXT PRIMARY KEY REFERENCES coupons(code),
+    redeemed_at TEXT NOT NULL,
+    reserve_no  TEXT REFERENCES reservations(reserve_no),
+    handled_by  TEXT
+);
+"""
+SCHEMA += _COUPON_TABLES
+
 
 class LedgerError(Exception):
     """台帳の決まりに合わない操作（存在しない予約、許されない状態の移り変わり、満席など）。"""
@@ -172,6 +191,7 @@ def upgrade_schema(conn: sqlite3.Connection) -> None:
             if col not in cols:
                 conn.execute(f"ALTER TABLE analysis_runs ADD COLUMN {col} {kind}")
         conn.execute(_MESSAGES_TABLE)
+        conn.executescript(_COUPON_TABLES)
 
 
 # ---- 店と施策 -------------------------------------------------------------
@@ -335,6 +355,67 @@ def add_event(conn: sqlite3.Connection, session_id: str, at: str, name: str) -> 
         conn.execute(
             "INSERT INTO events (at, session_id, name) VALUES (?, ?, ?)", (at, session_id, name)
         )
+
+
+# ---- クーポン ---------------------------------------------------------------
+
+def issue_coupon(conn: sqlite3.Connection, session_id: str, code: str, at: str) -> str:
+    """セッションにクーポンを出す。同じセッションでもう一度押しても、同じ番号を返す。"""
+    with conn:
+        if not conn.execute("SELECT 1 FROM sessions WHERE session_id = ?", (session_id,)).fetchone():
+            raise LedgerError("台帳に無いセッションです")
+        row = conn.execute("SELECT code FROM coupons WHERE session_id = ?", (session_id,)).fetchone()
+        if row:
+            return row["code"]
+        conn.execute("INSERT INTO coupons (code, session_id, issued_at) VALUES (?, ?, ?)",
+                     (code, session_id, at))
+    return code
+
+
+def _coupon_reservation(conn: sqlite3.Connection, session_id: str) -> sqlite3.Row | None:
+    """クーポンのセッションから生まれた予約（取消を除く・新しいもの）。"""
+    return conn.execute(
+        "SELECT reserve_no FROM reservations WHERE session_id = ? AND status != 'cancelled'"
+        " ORDER BY created_at DESC, reserve_no DESC LIMIT 1",
+        (session_id,),
+    ).fetchone()
+
+
+def get_coupon(conn: sqlite3.Connection, code: str) -> dict | None:
+    """受付の画面用。施策と、使ったかどうか、結ぶ予約（使った時に結んだもの、まだなら今の候補）。"""
+    row = conn.execute(
+        "SELECT c.code, c.session_id, c.issued_at, s.campaign, s.src, s.store_id,"
+        " u.redeemed_at, u.reserve_no AS redeemed_reserve_no, u.handled_by"
+        " FROM coupons c JOIN sessions s USING (session_id)"
+        " LEFT JOIN coupon_redemptions u USING (code) WHERE c.code = ?",
+        (code,),
+    ).fetchone()
+    if not row:
+        return None
+    out = dict(row)
+    reserve_no = out["redeemed_reserve_no"]
+    if not out["redeemed_at"]:
+        r = _coupon_reservation(conn, out["session_id"])
+        reserve_no = r["reserve_no"] if r else None
+    out["reservation"] = get_reservation(conn, reserve_no) if reserve_no else None
+    return out
+
+
+def redeem_coupon(conn: sqlite3.Connection, code: str, at: str, handled_by: str) -> str | None:
+    """クーポンを店で使ったと記録する（1つの番号で1回だけ）。結んだ予約番号を返す（無ければ None）。"""
+    with conn:
+        row = conn.execute("SELECT session_id FROM coupons WHERE code = ?", (code,)).fetchone()
+        if not row:
+            raise LedgerError("台帳に無いクーポンの番号です")
+        if conn.execute("SELECT 1 FROM coupon_redemptions WHERE code = ?", (code,)).fetchone():
+            raise LedgerError("このクーポンは使用済みです")
+        r = _coupon_reservation(conn, row["session_id"])
+        reserve_no = r["reserve_no"] if r else None
+        conn.execute(
+            "INSERT INTO coupon_redemptions (code, redeemed_at, reserve_no, handled_by) VALUES (?, ?, ?, ?)",
+            (code, at, reserve_no, handled_by),
+        )
+    return reserve_no
 
 
 # ---- 予約 -----------------------------------------------------------------
@@ -545,6 +626,14 @@ def snapshot(conn: sqlite3.Connection, store_id: str, period_from: str, period_t
                 conn,
                 "SELECT c.* FROM reservation_changes c JOIN reservations r USING (reserve_no)"
                 f" WHERE r.session_id IN ({session_filter}) ORDER BY c.at, c.id",
+                p,
+            ),
+            # クーポン1枚に1行（出した・使った・結んだ予約）。番号そのものは書き出しで落とす
+            "coupons": _rows(
+                conn,
+                "SELECT c.code, c.session_id, c.issued_at, u.redeemed_at, u.reserve_no"
+                " FROM coupons c LEFT JOIN coupon_redemptions u USING (code)"
+                f" WHERE c.session_id IN ({session_filter}) ORDER BY c.issued_at, c.code",
                 p,
             ),
         }

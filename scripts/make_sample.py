@@ -59,6 +59,14 @@ N_RESCHEDULED = 10  # お客様から連絡があって、店が日時を変え�
 N_LATE_RECORD = 2   # 押し忘れて翌日に記録した来店
 N_UNDO = 1          # 間違えて付けて取り消した来店
 
+# クーポン（LP の「点検 ¥500 引き」）。どちらの媒体でも同じ割合にする（仕込みは日数の1つだけにするため）。
+# 乱数は別の種で、予約まで作り終えた後に足す（前からある見本の数字を動かさない）
+COUPON_SEED = SEED + 1
+COUPON_SHOW = 0.30          # LP を開いたセッションのうち、クーポンを出した割合
+COUPON_USE_VISITED = 0.60   # 予約して来店した人のうち、クーポンを使った割合
+COUPON_USE_WALKIN = 0.08    # 予約しなかった人のうち、クーポンを持って予約なしで来た割合
+CODE_CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"  # 見分けにくい字（0/O・1/I/L）を除く
+
 
 def fmt(dt: datetime) -> str:
     return dt.strftime("%Y-%m-%dT%H:%M:%S")
@@ -327,7 +335,43 @@ def build(out: Path, plant: bool) -> None:
             ledger.record_visit(conn, no, fmt(mistaken), fmt(mistaken), staff)
             ledger.cancel_visit(conn, no, fmt(mistaken + timedelta(minutes=3)), staff)
 
+    add_coupons(conn)
     conn.close()
+
+
+def add_coupons(conn) -> None:
+    """クーポンを出した・使ったを足す。セッションは開いた時刻の順に、別の種の乱数で決める。"""
+    rng = random.Random(COUPON_SEED)
+    sessions = conn.execute(
+        "SELECT s.session_id, s.started_at, v.visited_at FROM sessions s"
+        " LEFT JOIN reservations r ON r.session_id = s.session_id AND r.status = 'visited'"
+        " LEFT JOIN visits v ON v.reserve_no = r.reserve_no"
+        " WHERE s.campaign != ? ORDER BY s.started_at, s.session_id",
+        (ledger.UNKNOWN,),
+    ).fetchall()
+    reserved = {r[0] for r in conn.execute("SELECT DISTINCT session_id FROM reservations")}
+    used_codes: set[str] = set()
+    for s in sessions:
+        if rng.random() >= COUPON_SHOW:
+            continue
+        code = "".join(rng.choice(CODE_CHARS) for _ in range(6))
+        while code in used_codes:
+            code = "".join(rng.choice(CODE_CHARS) for _ in range(6))
+        used_codes.add(code)
+        started = datetime.fromisoformat(s["started_at"])
+        ledger.issue_coupon(conn, s["session_id"], code, fmt(started + timedelta(seconds=rng.randint(20, 120))))
+        staff = rng.choice(STAFF)
+        if s["visited_at"]:  # 予約して来店した人：来店の時に使う
+            if rng.random() < COUPON_USE_VISITED:
+                at = datetime.fromisoformat(s["visited_at"]) + timedelta(minutes=2)
+                ledger.redeem_coupon(conn, code, fmt(at), staff)
+        elif s["session_id"] not in reserved:  # 予約しなかった人：数日のうちに予約なしで来る
+            if rng.random() < COUPON_USE_WALKIN:
+                day = started.date() + timedelta(days=rng.randint(1, 6))
+                while day.weekday() in DEFAULT_CLOSED_WEEKDAYS:
+                    day += timedelta(days=1)
+                if day < TODAY:
+                    ledger.redeem_coupon(conn, code, fmt(at_time(day, rng.randint(10, 16), rng.choice((0, 30)))), staff)
 
 
 def main() -> None:

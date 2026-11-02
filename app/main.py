@@ -6,14 +6,15 @@
 
 from __future__ import annotations
 
+import io
 import json
 import secrets
 import sqlite3
 from collections.abc import Iterator
 from datetime import date, datetime
 
-from fastapi import Depends, FastAPI, HTTPException
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -68,6 +69,10 @@ def normalize(value: str) -> str:
         raise HTTPException(400, f"日時の形が読めません: {value}") from e
 
 
+class StaffIn(BaseModel):
+    staff: str
+
+
 def guard(fn, *args, **kwargs):
     try:
         return fn(*args, **kwargs)
@@ -114,6 +119,17 @@ def dashboard_page() -> FileResponse:
 @app.get("/analysis/{analysis_id}", include_in_schema=False)
 def analysis_page(analysis_id: str) -> FileResponse:
     return page("analysis.html")
+
+
+@app.get("/coupon/{code}", include_in_schema=False)
+def coupon_page(code: str) -> FileResponse:
+    return page("coupon.html")
+
+
+@app.get("/desk/coupon", include_in_schema=False)
+@app.get("/desk/coupon/{code}", include_in_schema=False)
+def desk_coupon_page(code: str | None = None) -> FileResponse:
+    return page("desk_coupon.html")
 
 
 @app.get("/settings", include_in_schema=False)
@@ -211,6 +227,76 @@ def add_event(body: EventIn, conn: sqlite3.Connection = Depends(get_conn)) -> di
     return {"ok": True}
 
 
+# ---- API：クーポン --------------------------------------------------------------
+
+COUPON_CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"  # 見分けにくい字（0/O・1/I/L）を除く
+
+
+class CouponIn(BaseModel):
+    session_id: str
+
+
+@app.post("/api/coupons")
+def issue_coupon(body: CouponIn, conn: sqlite3.Connection = Depends(get_conn)) -> dict:
+    """LP の「クーポン」：このセッションのクーポンを出す（もう一度押しても同じ番号）。"""
+    for _ in range(5):
+        code = "".join(secrets.choice(COUPON_CHARS) for _ in range(6))
+        try:
+            return {"code": guard(ledger.issue_coupon, conn, body.session_id, code, fmt(config.now()))}
+        except sqlite3.IntegrityError:  # 番号がたまたま重なった時は引き直す
+            continue
+    raise HTTPException(500, "クーポンの番号を作れませんでした")
+
+
+def _coupon_or_404(conn: sqlite3.Connection, code: str) -> dict:
+    c = ledger.get_coupon(conn, code.strip().upper())
+    if not c:
+        raise HTTPException(404, "台帳に無いクーポンの番号です")
+    return c
+
+
+@app.get("/api/coupons/{code}/public")
+def coupon_public(code: str, conn: sqlite3.Connection = Depends(get_conn)) -> dict:
+    """お客様の画面用：番号と、使ったかどうかだけ。"""
+    c = _coupon_or_404(conn, code)
+    return {"code": c["code"], "used": bool(c["redeemed_at"])}
+
+
+@app.get("/api/coupons/{code}/qr.svg", include_in_schema=False)
+def coupon_qr(code: str, request: Request, conn: sqlite3.Connection = Depends(get_conn)) -> Response:
+    """QR の中身は受付の画面の URL だけ（番号のほか、個人情報は入れない）。"""
+    import segno
+
+    c = _coupon_or_404(conn, code)
+    url = str(request.base_url).rstrip("/") + f"/desk/coupon/{c['code']}"
+    buf = io.BytesIO()
+    segno.make(url, error="m").save(buf, kind="svg", scale=8, border=2, dark="#1f1a17", light="#ffffff")
+    return Response(buf.getvalue(), media_type="image/svg+xml")
+
+
+@app.get("/api/coupons/{code}")
+def get_coupon(code: str, conn: sqlite3.Connection = Depends(get_conn)) -> dict:
+    """受付の画面用：施策・使ったかどうか・結ぶ予約。"""
+    c = _coupon_or_404(conn, code)
+    r = c["reservation"]
+    return {
+        "code": c["code"], "campaign": c["campaign"], "src": c["src"], "issued_at": c["issued_at"],
+        "redeemed_at": c["redeemed_at"], "handled_by": c["handled_by"],
+        "reservation": None if not r else {
+            "reserve_no": r["reserve_no"], "menu": r["menu"], "confirmed_for": r["confirmed_for"],
+            "status": r["status"], "customer_name": r["customer_name"], "visited_at": r["visited_at"],
+        },
+    }
+
+
+@app.post("/api/coupons/{code}/redeem")
+def redeem_coupon(code: str, body: StaffIn, conn: sqlite3.Connection = Depends(get_conn)) -> dict:
+    """店でクーポンを使った（受付が「使った」を押した時だけ。画面を開いただけでは記録しない）。"""
+    c = _coupon_or_404(conn, code)
+    reserve_no = guard(ledger.redeem_coupon, conn, c["code"], fmt(config.now()), body.staff)
+    return {"ok": True, "reserve_no": reserve_no}
+
+
 # ---- API：予約 -----------------------------------------------------------------
 
 class ReservationIn(BaseModel):
@@ -250,10 +336,6 @@ def reservation_public(reserve_no: str, conn: sqlite3.Connection = Depends(get_c
     if not r:
         raise HTTPException(404, "予約がありません")
     return {k: r[k] for k in ("reserve_no", "menu", "confirmed_for", "status")}
-
-
-class StaffIn(BaseModel):
-    staff: str
 
 
 class RescheduleIn(StaffIn):

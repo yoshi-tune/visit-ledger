@@ -42,8 +42,23 @@ function funnelCard(c) {
     el("div", { class: "funnel" }, rows),
     el("h3", { style: "font-size:0.9375rem;margin-top:16px" }, ["予約のその後"]),
     el("div", { class: "breakdown" }, cells),
+    ...couponRows(c),
     el("p", { class: "muted", style: "margin-top:10px" }, [`参考：配った数 ${c.distributed ?? "—"}（割合の分母にはしていません）`]),
   ]);
+}
+
+/** クーポン：LP で出した数と、店で使った数（予約あり／予約なし）。来店率には入れない @param {any} c */
+function couponRows(c) {
+  const k = c.coupons;
+  if (!k) return [];
+  const cells = [
+    ["LP で出した", k.shown], ["店で使った", k.used], ["うち予約あり", k.used_with_reservation], ["うち予約なし", k.used_without_reservation],
+  ].map(([label, v]) => el("div", {}, [el("b", {}, [String(v)]), el("span", {}, [String(label)])]));
+  return [
+    el("h3", { style: "font-size:0.9375rem;margin-top:16px" }, ["クーポン（点検 ¥500 引き）"]),
+    el("div", { class: "breakdown" }, cells),
+    el("p", { class: "muted", style: "margin-top:6px" }, ["「予約なし」は、ネット予約の数字には出てこない来店です（来店率には入れていません）"]),
+  ];
 }
 
 async function loadFunnel() {

@@ -118,6 +118,19 @@ visit-ledger は、施策の URL から予約・来店までを **1本の台帳*
 - 画面と報告には必ず **施策期間と基準日時** を出す
 - 画面の上に **「ネット予約で追えた分だけです。電話だけの予約・飛び込みの来店は入っていません」** と出す
 
+### クーポン（11/2 夜に追加）
+
+LP の「クーポン」（見本：点検 ¥500 引き）で、そのセッションにクーポンを1つ出す（もう一度押しても同じ番号）。お客様は QR と番号を受付で見せ、受付は QR を店のスマホで読むか番号を入れて、**「使った」を押した時だけ**記録する（開いただけでは記録しない・1つの番号で1回だけ）。クーポンを出したセッションに予約があれば、その予約と結ぶ。無ければ **予約なしの来店** として残る。
+
+| 欄 | 数え方 |
+|---|---|
+| LP で出した | クーポンを出したセッションの数 |
+| 店で使った | そのうち店で使った数。うち予約あり（セッションに予約がある）／うち予約なし |
+
+- 来店率の数え方は変えない（クーポンの欄は別に出す）。「予約なし」は、そのセッションに予約が無いという意味で、電話など別の道で予約した人も入りうる
+- QR の中身は受付の画面の URL（`/desk/coupon/{番号}`）だけ。番号は無作為で、何も表さない。書き出しでは番号を落とす
+- 今の現場では LP のクーポンのボタンを押した数までしか分からず、店で使ったかは残っていない（作品の出発点の1つ）
+
 ## 4. 画面とエンドポイント
 
 | 画面 | パス（案） | 誰が使う | 中身 |
@@ -125,6 +138,8 @@ visit-ledger は、施策の URL から予約・来店までを **1本の台帳*
 | LP | `/lp/{store}?campaign=…&src=…` | お客様 | 共通のテンプレート1つ |
 | 予約 | `/reserve` | お客様 | 1画面1問：メニュー → 日にち（休み・満席は押せない）→ 時間（残りの台数）→ 名前・電話 → 確認。送った時点で確定 |
 | 予約の完了 | `/reserve/done/{reserve_no}` | お客様 | 予約番号と「予約が確定しました」 |
+| クーポン | `/coupon/{番号}` | お客様 | QR と番号。予約もする人は同じセッションのまま予約へ |
+| クーポンの受付 | `/desk/coupon/{番号}` | 店の人 | 施策・使ったか・結ぶ予約を見て「使った」を押す。予約があれば来店の記録も同じ画面から |
 | 受付 | `/desk` | 店の人 | ①今日の予約（来店） ②今日の来店（来店の取り消し） ③これからの予約（日時の変更・取消） ④名前で探す ⑤押し忘れた来店を後日記録 |
 | 店の設定 | `/settings` | 店の人 | 時間帯ごとの台数・休みの曜日・休みの日（店のマスタ）。これからの14日の空き |
 | 効果の画面 | `/dashboard` | 店長 | 来店までの道のり・予約の内訳・参考の欄・分析の依頼（モデルを選ぶ） |
@@ -141,6 +156,9 @@ visit-ledger は、施策の URL から予約・来店までを **1本の台帳*
 | `POST /api/reservations/{reserve_no}/reschedule` ・ `/cancel` | 日時の変更（新しい日時の空きも確かめる）・取消 |
 | `GET /api/master` / `PUT /api/master` | 店のマスタの読み書き |
 | `POST /api/visits` / `DELETE /api/visits/{reserve_no}` | 来店の記録とその取り消し |
+| `POST /api/coupons` | LP のセッションにクーポンを出す（同じセッションなら同じ番号） |
+| `GET /api/coupons/{番号}`・`/public`・`/qr.svg` | 受付用（施策・結ぶ予約）・お客様用（使ったかだけ）・QR の画像 |
+| `POST /api/coupons/{番号}/redeem` | 店で使ったと記録する（1回だけ） |
 | `GET /api/funnel` | 来店までの道のりと予約の内訳（アプリの集計） |
 | `POST /api/analysis` → `GET /api/analysis/{id}` | 分析の依頼（`model`：Opus 5.5 / Sonnet 5.5 / Haiku 5.5）と、結果・実行の記録・チャットの受け取り |
 | `POST /api/analysis/{id}/messages` | 分析の続きの質問。同じエージェントのセッションに送り、答えは裏で書く（1問ずつ。電話番号らしき数字は断る） |
@@ -158,6 +176,8 @@ visit-ledger は、施策の URL から予約・来店までを **1本の台帳*
 | `closed_weekdays` / `closed_dates` | `store_id`, `weekday` ／ `store_id`, `day`, `note` | 店のマスタ：休みの曜日（0=月…6=日）と休みの日 |
 | `reservation_changes` | `id`, `reserve_no`, `at`, `from_status`, `to_status`, `confirmed_for`, `handled_by` | 状態と確定日時の変更の履歴（誰がいつ変えたか） |
 | `visits` | `reserve_no`, `visited_at`, `recorded_at` | `reserve_no` で一意。`recorded_at` で押し忘れを後から記録したと分かる |
+| `coupons` | `code`, `session_id`, `issued_at` | セッションに1つ。番号は無作為の6字 |
+| `coupon_redemptions` | `code`, `redeemed_at`, `reserve_no`, `handled_by` | 番号で一意（1回だけ）。`reserve_no` は使った時に結んだ予約（予約なしなら空） |
 | `analysis_runs` | `analysis_id`, `as_of`, `status`, `export_csv`, `id_map_json`, `funnel_json`, `tool_log`, `report_json` | 分析ごとに、渡したもの・仮の番号の対応表・実行の記録を固定して残す。`id_map_json` は外に出さない |
 
 決まり：
@@ -195,6 +215,7 @@ visit-ledger は、施策の URL から予約・来店までを **1本の台帳*
 
 - 生成スクリプトに **仕込みを切る指定** を付け、仕込みの無い台帳でもエージェントを回して、異常をでっち上げないかを確かめる
 - 仕込みの中身は生成スクリプトと README で明かす
+- クーポンは仕込みを入れない：LP を開いたセッションの 30% が出し、予約して来店した人の 60%・予約しなかった人の 8% が使う（どちらの媒体でも同じ割合）。乱数は別の種で、予約まで作った後に足す（前からの数字を動かさない）
 
 ### 天候（初回は入れない・余裕があれば足す）
 
@@ -233,9 +254,10 @@ visit-ledger は、施策の URL から予約・来店までを **1本の台帳*
 | `visits.csv` | `reserve_no`※, `visited_at`, `recorded_at` | 来店の検算、押し忘れの後日記録 |
 | `reservation_changes.csv` | `reserve_no`※, `at`, `from_status`, `to_status`, `confirmed_for` | 日時の変更と来店未記録の関係を確かめる |
 | `campaigns.csv` | `campaign`, `src`, `store_id`, `distributed`, `started_on`, `ended_on` | 施策期間と、参考としての配った数 |
+| `coupons.csv` | `session_id`※, `issued_at`, `redeemed_at`, `reserve_no`※ | クーポンを出した・使った・結んだ予約（空なら予約なしの来店）。番号は渡さない |
 
 ※ は仮の番号（例：`S0001`・`R001`）。セッションは開始日時の順、予約は作った日時の順に振り直し、表どうしのつながりは保つ。
-渡さない列：`customer_name`・`customer_phone`・`handled_by`・`submit_key`・`updated_at`・実際の予約番号とセッション番号。
+渡さない列：`customer_name`・`customer_phone`・`handled_by`・`submit_key`・`updated_at`・クーポンの番号（`code`）・実際の予約番号とセッション番号。
 
 エージェントへの指示：配った数は参考の値で、来店までの道のりの分母にしない。履歴から言えることも観測までにとどめ、原因は仮説として書く。
 
