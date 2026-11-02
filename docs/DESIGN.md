@@ -155,6 +155,7 @@ visit-ledger は、施策の URL から予約の希望・店での確定・来�
 | `reservations` | `reserve_no`, `submit_key`, `session_id`, `campaign`, `src`, `store_id`, `menu`, `requested_for`, `confirmed_for`, `status`, `handled_by`, `created_at`, `updated_at`, `customer_name`, `customer_phone` | `submit_key` は一意。施策はセッションから写す |
 | `reservation_changes` | `id`, `reserve_no`, `at`, `from_status`, `to_status`, `confirmed_for`, `handled_by` | 状態と確定日時の変更の履歴（誰がいつ変えたか） |
 | `visits` | `reserve_no`, `visited_at`, `recorded_at` | `reserve_no` で一意。`recorded_at` で押し忘れを後から記録したと分かる |
+| `contact_attempts` | `id`, `reserve_no`, `at`, `result`, `handled_by` | 日時が決まらなかった電話（`no_answer` 不在・`callback` 折り返し待ち）。予約の状態は変えない。交代した人が二度電話しないため（11/2 夜に追加） |
 | `analysis_runs` | `analysis_id`, `as_of`, `status`, `export_csv`, `id_map_json`, `funnel_json`, `tool_log`, `report_json` | 分析ごとに、渡したもの・仮の番号の対応表・実行の記録を固定して残す。`id_map_json` は外に出さない |
 
 決まり：

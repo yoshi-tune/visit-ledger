@@ -151,8 +151,23 @@ function guide(run) {
 }
 
 /** @param {string} id */
-async function poll(id) {
-  const run = await api(`/api/analysis/${encodeURIComponent(id)}`);
+/** @param {string} id @param {number} [failures] 続けて失敗した回数 */
+async function poll(id, failures = 0) {
+  /** @type {any} */
+  let run;
+  try {
+    run = await api(`/api/analysis/${encodeURIComponent(id)}`);
+  } catch (e) {
+    // 通信が途切れても止めない。同じ分析につなぎ直し、5回続けて失敗したら頼み直せるようにする
+    if (failures < 5) {
+      byId("status").replaceChildren(say("通信が途切れました。同じ分析に、つなぎ直しています…", "think"));
+      setTimeout(() => poll(id, failures + 1), 5000);
+    } else {
+      byId("status").replaceChildren(say(`つなぎ直せませんでした（${/** @type {Error} */ (e).message}）。サーバーを確かめてから、もう一度頼んでください。`, "think"));
+      ask.disabled = false;
+    }
+    return;
+  }
   const busy = run.status === "queued" || run.status === "running";
   byId("status").replaceChildren(guide(run));
   renderReport(run);

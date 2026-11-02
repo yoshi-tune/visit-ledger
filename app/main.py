@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import json
 import secrets
 import sqlite3
 from collections.abc import Iterator
@@ -23,6 +24,12 @@ if not config.DB_PATH.exists():
         f"台帳がありません: {config.DB_PATH}\n"
         "先に `uv run python scripts/make_sample.py` で見本の台帳を作ってください。"
     )
+
+# 前回のサーバーで終わらなかった分析は、実行中のまま残さず「失敗」にする（もう一度頼めるように）
+with ledger.connect(config.DB_PATH) as _conn:
+    ledger.fail_unfinished_runs(_conn, json.dumps(
+        {"error": "サーバーが途中で止まったため、分析が終わりませんでした。もう一度頼んでください。"},
+        ensure_ascii=False))
 
 STATIC = config.ROOT / "app" / "static"
 app = FastAPI(title="visit-ledger")
@@ -193,6 +200,16 @@ class ConfirmIn(StaffIn):
 @app.post("/api/reservations/{reserve_no}/confirm")
 def confirm(reserve_no: str, body: ConfirmIn, conn: sqlite3.Connection = Depends(get_conn)) -> dict:
     guard(ledger.confirm, conn, reserve_no, normalize(body.confirmed_for), fmt(config.now()), body.staff)
+    return {"ok": True}
+
+
+class ContactIn(StaffIn):
+    result: str  # no_answer（不在）/ callback（折り返し待ち）
+
+
+@app.post("/api/reservations/{reserve_no}/contact")
+def contact(reserve_no: str, body: ContactIn, conn: sqlite3.Connection = Depends(get_conn)) -> dict:
+    guard(ledger.record_contact, conn, reserve_no, fmt(config.now()), body.result, body.staff)
     return {"ok": True}
 
 

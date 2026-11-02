@@ -10,6 +10,8 @@ from pathlib import Path
 
 MENUS = ("オイル交換", "タイヤ交換", "秋の点検")
 EVENT_NAMES = ("lp_view", "reserve_tap")
+# 電話の結果（つながって日時が決まったら confirm で記録する。ここは「決まらなかった」電話）
+CONTACT_RESULTS = ("no_answer", "callback")
 UNKNOWN = "unknown"
 
 # 状態ごとに、次に移れる状態（DESIGN §3）
@@ -87,6 +89,14 @@ CREATE TABLE visits (
     reserve_no  TEXT PRIMARY KEY REFERENCES reservations(reserve_no),
     visited_at  TEXT NOT NULL,
     recorded_at TEXT NOT NULL
+);
+
+CREATE TABLE contact_attempts (
+    id          INTEGER PRIMARY KEY,
+    reserve_no  TEXT NOT NULL REFERENCES reservations(reserve_no),
+    at          TEXT NOT NULL,
+    result      TEXT NOT NULL CHECK (result IN ('no_answer', 'callback')),
+    handled_by  TEXT NOT NULL
 );
 
 CREATE TABLE analysis_runs (
@@ -398,15 +408,36 @@ def get_reservation(conn: sqlite3.Connection, reserve_no: str) -> dict | None:
 
 
 def list_reservations(conn: sqlite3.Connection, store_id: str) -> list[dict]:
-    """受付の画面用。名前での絞り込みは画面の側で行う（名前を URL やログに出さないため）。"""
+    """受付の画面用。名前での絞り込みは画面の側で行う（名前を URL やログに出さないため）。
+    最後に「決まらなかった電話」の記録と、その回数も付ける（交代した人が二度電話しないように）。"""
     return _rows(
         conn,
         "SELECT r.reserve_no, r.menu, r.requested_for, r.confirmed_for, r.status, r.handled_by,"
-        " r.created_at, r.src, r.customer_name, r.customer_phone, v.visited_at, v.recorded_at"
+        " r.created_at, r.src, r.customer_name, r.customer_phone, v.visited_at, v.recorded_at,"
+        " c.at AS last_contact_at, c.result AS last_contact_result, c.handled_by AS last_contact_by,"
+        " (SELECT COUNT(*) FROM contact_attempts x WHERE x.reserve_no = r.reserve_no) AS contact_count"
         " FROM reservations r LEFT JOIN visits v USING (reserve_no)"
+        " LEFT JOIN contact_attempts c ON c.id = ("
+        "   SELECT id FROM contact_attempts y WHERE y.reserve_no = r.reserve_no ORDER BY at DESC, id DESC LIMIT 1)"
         " WHERE r.store_id = ? ORDER BY COALESCE(r.confirmed_for, r.requested_for), r.reserve_no",
         (store_id,),
     )
+
+
+def record_contact(
+    conn: sqlite3.Connection, reserve_no: str, at: str, result: str, handled_by: str
+) -> None:
+    """日時が決まらなかった電話（不在・折り返し待ち）を記録する。予約の状態は変えない。"""
+    if result not in CONTACT_RESULTS:
+        raise LedgerError(f"知らない電話の結果です: {result}")
+    row = _get(conn, reserve_no)
+    if row["status"] not in ("requested", "confirmed"):
+        raise LedgerError(f"{reserve_no}: {row['status']} の予約には電話の記録を付けません")
+    with conn:
+        conn.execute(
+            "INSERT INTO contact_attempts (reserve_no, at, result, handled_by) VALUES (?, ?, ?, ?)",
+            (reserve_no, at, result, handled_by),
+        )
 
 
 # ---- 分析の記録 -------------------------------------------------------------
@@ -435,6 +466,17 @@ def update_analysis_run(conn: sqlite3.Connection, analysis_id: str, **fields: st
             f"UPDATE analysis_runs SET {', '.join(f'{k} = ?' for k in fields)} WHERE analysis_id = ?",
             (*fields.values(), analysis_id),
         )
+
+
+def fail_unfinished_runs(conn: sqlite3.Connection, message: str) -> int:
+    """起動した時に、前回のサーバーで終わらなかった分析を「失敗」にする（実行中のまま残さない）。"""
+    with conn:
+        cur = conn.execute(
+            "UPDATE analysis_runs SET status = 'failed', report_json = ?"
+            " WHERE status IN ('queued', 'running')",
+            (message,),
+        )
+    return cur.rowcount
 
 
 def get_analysis_run(conn: sqlite3.Connection, analysis_id: str) -> dict | None:

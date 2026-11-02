@@ -338,3 +338,4 @@ details > summary { cursor: pointer; font-weight: 700; color: var(--ink-2); padd
   display: grid; place-items: center; transition: opacity 0.25s ease;
 }
 .page-loader.out { opacity: 0; pointer-events: none; }
+.contact-note { background: var(--warn-soft); color: var(--warn); border-radius: 10px; padding: 6px 10px; font-size: 0.875rem; font-weight: 700; }

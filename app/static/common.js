@@ -145,10 +145,14 @@ export function dateTimePicker(opt) {
 
 /**
  * 画面を開いた時の読み込み中の表示（ナットクがナットを締める）。
- * 手元では一瞬で終わるので、最初の読み込みだけ最低 minMs は見せる。返した関数を呼ぶと消える。
+ * 手元では一瞬で終わるので、そのタブで最初に開いた時だけ最低 minMs は見せる（2回目からは待たせない）。返した関数を呼ぶと消える。
  * @param {number} [minMs]
  */
 export function pageLoading(minMs = 700) {
+  const key = `vl:loaded:${location.pathname}`;
+  let seen = false;
+  try { seen = sessionStorage.getItem(key) === "1"; sessionStorage.setItem(key, "1"); } catch { /* 保存できなくても動く */ }
+  if (seen) return () => {};
   const started = performance.now();
   const cover = el("div", { class: "page-loader" }, [loader()]);
   document.body.append(cover);

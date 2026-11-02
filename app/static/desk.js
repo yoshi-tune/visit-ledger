@@ -10,16 +10,17 @@ const EMPTY = {
   today: ["今日の予約は、ほかにありません。", "normal"],
   visited: ["今日の来店はまだありません。", "normal"],
   search: ["見つかりませんでした。別の書き方でも探してみてください。", "think"],
-  past: ["この日の記録漏れはありません。", "happy"],
+  past: ["この確定日で、来店の記録が無い予約はありません。", "happy"],
 };
 
 /** @typedef {{reserve_no: string, menu: string, requested_for: string, confirmed_for: string | null,
  *   status: string, src: string, customer_name: string, customer_phone: string,
- *   visited_at: string | null, recorded_at: string | null}} Reservation */
+ *   visited_at: string | null, recorded_at: string | null, last_contact_at: string | null,
+ *   last_contact_result: string | null, last_contact_by: string | null, contact_count: number}} Reservation */
 
 const STATUS = { requested: "未連絡", confirmed: "確定", visited: "来店", declined: "受けられない", cancelled: "取消" };
 const HINT = {
-  requested: "電話で日時を決めたら、日にちと時間を選んで「確定」。",
+  requested: "電話で日時を決めたら「日時を決めて確定」。つながらなかった時は「不在」か「折り返し待ち」を押すと、次の人に引き継げます。",
   today: "お客様が来たら「来店」。時間の早い順に並んでいます。",
   visited: "間違えて押した来店は「取り消す」で確定に戻せます。",
   search: "お名前の一部で探せます（すべての予約から）。",
@@ -38,6 +39,8 @@ let pastDay = "";
 let openPicker = "";
 
 const day = (/** @type {string | null} */ iso) => (iso || "").slice(0, 10);
+const CONTACT = { no_answer: "不在", callback: "折り返し待ち" };
+const REFRESH_MS = 30000;
 
 /** @param {string} path @param {object} body @param {string} done @param {string} [method] @param {boolean} [cheer] */
 async function act(path, body, done, method, cheer = false) {
@@ -79,7 +82,14 @@ function card(r) {
     el("span", { class: "muted" }, [r.reserve_no]),
   ]);
   const actions = el("div", { class: "actions" });
-  const box = el("div", { class: "card rcard" }, [top, meta, actions]);
+  const box = el("div", { class: "card rcard" }, [top, meta]);
+  if (r.last_contact_at && (r.status === "requested" || r.status === "confirmed")) {
+    box.append(el("div", { class: "contact-note" }, [
+      `最後の電話：${fmtDateTime(r.last_contact_at)} ${CONTACT[/** @type {keyof typeof CONTACT} */ (r.last_contact_result)] || r.last_contact_result}（${r.last_contact_by}）`,
+      r.contact_count > 1 ? ` ・ ${r.contact_count}回目` : "",
+    ]));
+  }
+  box.append(actions);
 
   if (tab === "past") {
     actions.append(btn(`${fmtDay(pastDay)} に来店`, () => act("/api/visits",
@@ -88,6 +98,8 @@ function card(r) {
   }
   if (r.status === "requested") {
     actions.append(btn("日時を決めて確定", () => { openPicker = openPicker === r.reserve_no ? "" : r.reserve_no; render(); }, "btn"));
+    actions.append(btn("不在", () => act(`/api/reservations/${no}/contact`, { result: "no_answer" }, `${r.customer_name} 様：不在を記録しました`), "btn soft sm"));
+    actions.append(btn("折り返し待ち", () => act(`/api/reservations/${no}/contact`, { result: "callback" }, `${r.customer_name} 様：折り返し待ちを記録しました`), "btn soft sm"));
   }
   if (r.status === "confirmed") {
     actions.append(btn("来店", () => act("/api/visits", { reserve_no: r.reserve_no }, `${r.customer_name} 様、いらっしゃいませ！来店を記録しました`, undefined, true), "btn lg"));
@@ -128,7 +140,8 @@ function render() {
   const requested = all.filter((r) => r.status === "requested");
   const todayList = all.filter((r) => r.status === "confirmed" && day(r.confirmed_for) === conf.today)
     .sort((a, b) => (a.confirmed_for || "").localeCompare(b.confirmed_for || ""));
-  const visited = all.filter((r) => r.status === "visited" && day(r.recorded_at) === conf.today);
+  // 今日の来店は「来た日」で出す（昨日の来店を今日記録したものは入れない）
+  const visited = all.filter((r) => r.status === "visited" && day(r.visited_at) === conf.today);
   const setCount = (/** @type {string} */ id, /** @type {number} */ n, hot = false) => {
     const c = byId(id);
     c.textContent = String(n);
@@ -197,7 +210,15 @@ function emptyState() {
 async function load() {
   const data = await api("/api/reservations");
   all = data.reservations;
+  const t = new Date();
+  byId("updated").textContent = `最終更新 ${String(t.getHours()).padStart(2, "0")}:${String(t.getMinutes()).padStart(2, "0")}`;
   render();
+}
+
+/** 開きっぱなしでも新しい希望に気づけるよう、定期的に読み直す。日時を選んでいる途中は邪魔しない */
+async function refresh() {
+  if (openPicker || document.hidden) return;
+  try { await load(); } catch { byId("updated").textContent = "更新できませんでした（通信を確かめてください）"; }
 }
 
 async function main() {
@@ -224,6 +245,8 @@ async function main() {
     });
   }
   await load();
+  setInterval(refresh, REFRESH_MS);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(); });
 }
 
 main().finally(pageLoading()).catch((e) => toast(`読み込めませんでした：${e.message}`, true));
