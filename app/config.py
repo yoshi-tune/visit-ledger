@@ -27,6 +27,14 @@ DEFAULT_CLOSED_WEEKDAYS = (2,)  # 毎週水曜は休み（0=月 … 6=日）
 
 DB_PATH = ROOT / "data" / "ledger.db"
 
+# 分析に使えるモデル（効果の画面で選ぶ）。既定は Opus 5.5
+MODELS = {
+    "claude-opus-5-5": {"label": "Opus 5.5", "note": "じっくり調べる（1回 $1 前後）"},
+    "claude-sonnet-5-5": {"label": "Sonnet 5.5", "note": "速め・安め"},
+    "claude-haiku-5-5": {"label": "Haiku 5.5", "note": "いちばん速く安い（掘り下げは浅くなりやすい）"},
+}
+DEFAULT_MODEL = "claude-opus-5-5"
+
 
 def now() -> datetime:
     """アプリの「今」：日付は「今日」に固定し、時刻だけ実際の時計を使う。"""

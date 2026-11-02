@@ -29,12 +29,13 @@
       <div class="analysis-head">
         <div>
           <h2>Claude に分析を頼む</h2>
-          <p class="muted">台帳の書き出し（名前・電話を含まない列だけ）とこの画面の数字を渡し、Claude が集計を重ねて調べます。</p>
+          <p class="muted">台帳の書き出し（名前・電話を含まない列だけ）とこの画面の数字を渡し、Claude が集計を重ねて調べます。報告は別の画面に出て、そのままチャットで続けて質問できます。</p>
         </div>
-        <button id="ask" class="btn">分析を頼む</button>
       </div>
+      <h3 class="small-head">使うモデル</h3>
+      <div id="models" class="model-row" role="group" aria-label="使うモデル"></div>
+      <div class="ask-row"><button id="ask" class="btn">分析を頼む（別の画面で開く）</button></div>
       <div id="status" class="analysis-status"></div>
-      <div id="report" class="report"></div>
     </section>
     <p id="error" class="input-error"></p>
   </main>

@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Claude の分析</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="app-header">
+    <div class="brand">Claude の分析<small id="meta"></small></div>
+    <nav class="app-nav"><a href="/dashboard" target="vl-dashboard">効果の画面</a></nav>
+  </header>
+  <main class="app-main analysis-layout">
+    <section class="analysis-main">
+      <div id="status" class="analysis-status"></div>
+      <div id="report" class="report"></div>
+    </section>
+    <aside class="chat card" aria-label="ナットクと話す">
+      <h2>続けて聞く</h2>
+      <p class="muted">同じ台帳で、Claude がその場で数え直して答えます。お客様の名前・電話番号は書かないでください。</p>
+      <div id="chat-log" class="chat-log" aria-live="polite"></div>
+      <div id="suggest" class="suggest"></div>
+      <form id="chat-form" class="chat-form">
+        <textarea id="chat-input" class="input" rows="2" maxlength="1000" placeholder="例：金曜日だけで見るとどうなる？" aria-label="質問"></textarea>
+        <button id="chat-send" class="btn" type="submit">聞く</button>
+      </form>
+      <p id="chat-error" class="input-error"></p>
+    </aside>
+  </main>
+  <script type="module" src="/static/analysis.js"></script>
+</body>
+</html>

@@ -27,6 +27,7 @@ if not config.DB_PATH.exists():
 
 # 前回のサーバーで終わらなかった分析は、実行中のまま残さず「失敗」にする（もう一度頼めるように）
 with ledger.connect(config.DB_PATH) as _conn:
+    ledger.upgrade_schema(_conn)
     ledger.fail_unfinished_runs(_conn, json.dumps(
         {"error": "サーバーが途中で止まったため、分析が終わりませんでした。もう一度頼んでください。"},
         ensure_ascii=False))
@@ -99,6 +100,11 @@ def dashboard_page() -> FileResponse:
     return page("dashboard.html")
 
 
+@app.get("/analysis/{analysis_id}", include_in_schema=False)
+def analysis_page(analysis_id: str) -> FileResponse:
+    return page("analysis.html")
+
+
 @app.get("/settings", include_in_schema=False)
 def settings_page() -> FileResponse:
     return page("settings.html")
@@ -117,6 +123,8 @@ def get_config(conn: sqlite3.Connection = Depends(get_conn)) -> dict:
         "staff": ["A", "B"],
         "weekdays": list(ledger.WEEKDAYS),
         "period": {"from": config.PERIOD_FROM.isoformat(), "to": config.PERIOD_TO.isoformat()},
+        "models": [{"id": k, **v} for k, v in config.MODELS.items()],
+        "default_model": config.DEFAULT_MODEL,
     }
 
 
@@ -298,10 +306,32 @@ def get_funnel(conn: sqlite3.Connection = Depends(get_conn)) -> dict:
     return current_funnel(conn)[1]
 
 
+class AnalysisIn(BaseModel):
+    model: str = config.DEFAULT_MODEL
+
+
+class QuestionIn(BaseModel):
+    text: str = Field(min_length=1, max_length=1000)
+
+
 @app.post("/api/analysis")
-def start_analysis(conn: sqlite3.Connection = Depends(get_conn)) -> dict:
+def start_analysis(body: AnalysisIn | None = None,
+                   conn: sqlite3.Connection = Depends(get_conn)) -> dict:
+    model = (body or AnalysisIn()).model
+    if model not in config.MODELS:
+        raise HTTPException(400, f"選べないモデルです: {model}")
     snap, fun = current_funnel(conn)
-    return analysis.start(conn, snap, fun)
+    return analysis.start(conn, snap, fun, model)
+
+
+@app.post("/api/analysis/{analysis_id}/messages")
+def ask_analysis(analysis_id: str, body: QuestionIn,
+                 conn: sqlite3.Connection = Depends(get_conn)) -> dict:
+    """分析の続きの質問（壁打ち）。同じエージェントのセッションに送り、答えは裏の処理で書く。"""
+    try:
+        return analysis.ask(conn, analysis_id, body.text)
+    except analysis.RunError as e:
+        raise HTTPException(400, str(e)) from e
 
 
 @app.get("/api/analysis/{analysis_id}")

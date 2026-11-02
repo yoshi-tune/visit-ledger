@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import threading
 import traceback
 import uuid
@@ -25,7 +26,7 @@ class RunError(Exception):
     """店長に見せてよい言葉で書いた失敗の理由。"""
 
 
-def start(conn, snapshot: dict, funnel: dict) -> dict:
+def start(conn, snapshot: dict, funnel: dict, model: str = config.DEFAULT_MODEL) -> dict:
     files, id_map = export.build(snapshot)
     analysis_id = f"an_{uuid.uuid4().hex[:12]}"
     ledger.create_analysis_run(
@@ -35,6 +36,7 @@ def start(conn, snapshot: dict, funnel: dict) -> dict:
         id_map_json=json.dumps(id_map),
         funnel_json=json.dumps(funnel, ensure_ascii=False),
         tool_log="[]",
+        model=model,
     )
     threading.Thread(target=_run, args=(analysis_id,), daemon=True).start()
     return {"analysis_id": analysis_id, "status": "queued"}
@@ -50,9 +52,17 @@ def get(conn, analysis_id: str) -> dict | None:
         "analysis_id": run["analysis_id"],
         "as_of": run["as_of"],
         "status": run["status"],
+        "model": run["model"] or config.DEFAULT_MODEL,
+        "model_label": config.MODELS.get(run["model"] or config.DEFAULT_MODEL, {}).get("label"),
         "tool_log": json.loads(run["tool_log"] or "[]"),
         "report": None,
         "error": None,
+        "can_ask": bool(_session_id(run)) and run["status"] == "done",
+        "messages": [
+            {"id": m["id"], "at": m["at"], "role": m["role"], "status": m["status"], "text": m["text"],
+             "tool_log": json.loads(m["tool_log"] or "[]")}
+            for m in ledger.list_analysis_messages(conn, analysis_id)
+        ],
     }
     if report and "error" in report:
         out["error"] = report["error"]
@@ -67,7 +77,9 @@ def _run(analysis_id: str) -> None:
 
     def on_log(entry: dict) -> None:
         log.append(entry)
-        ledger.update_analysis_run(conn, analysis_id, tool_log=json.dumps(log, ensure_ascii=False))
+        extra = {"session_id": entry["session_id"]} if entry.get("kind") == "session" else {}
+        ledger.update_analysis_run(conn, analysis_id, tool_log=json.dumps(log, ensure_ascii=False),
+                                   **extra)
 
     try:
         run = ledger.get_analysis_run(conn, analysis_id)
@@ -80,7 +92,8 @@ def _run(analysis_id: str) -> None:
             from app.analysis import messages_runner as runner
         else:
             from app.analysis import agent_runner as runner
-        report = runner.run(analysis_id, files, funnel, on_log)
+        model = run["model"] or config.DEFAULT_MODEL
+        report = runner.run(analysis_id, files, funnel, on_log, model)
 
         missing = [k for k in REQUIRED_KEYS if k not in report]
         if missing:
@@ -95,6 +108,62 @@ def _run(analysis_id: str) -> None:
             conn, analysis_id, status="failed",
             report_json=json.dumps({"error": message}, ensure_ascii=False),
         )
+        if not isinstance(e, RunError):
+            traceback.print_exc()
+    finally:
+        conn.close()
+
+
+# ---- 分析の続きの質問（壁打ち） ------------------------------------------------
+
+# 電話番号らしき数字の並び（10桁以上）。名前は見分けられないので、画面で書かないよう頼む
+_PHONE = re.compile(r"(?:\d[-‐ー－\s]?){10,}")
+
+
+def _session_id(run: dict) -> str | None:
+    if run.get("session_id"):
+        return run["session_id"]
+    for e in json.loads(run.get("tool_log") or "[]"):  # 列を足す前の分析は、記録から拾う
+        if e.get("kind") == "session":
+            return e.get("session_id")
+    return None
+
+
+def ask(conn, analysis_id: str, text: str) -> dict:
+    run = ledger.get_analysis_run(conn, analysis_id)
+    if not run:
+        raise RunError("分析がありません。")
+    session_id = _session_id(run)
+    if run["status"] != "done" or not session_id:
+        raise RunError("この分析には続けて質問できません（エージェントの分析が終わった後だけ聞けます）。")
+    if _PHONE.search(text):
+        raise RunError("電話番号のような数字が入っています。お客様の情報は書かずに聞いてください。")
+    messages = ledger.list_analysis_messages(conn, analysis_id)
+    if any(m["status"] == "pending" for m in messages):
+        raise RunError("前の質問に答えている途中です。答えが出てから聞いてください。")
+    at = config.now().isoformat(timespec="seconds")
+    ledger.add_analysis_message(conn, analysis_id, at, "user", "done", text.strip())
+    reply_id = ledger.add_analysis_message(conn, analysis_id, at, "assistant", "pending")
+    threading.Thread(target=_answer, args=(session_id, reply_id, text.strip()), daemon=True).start()
+    return {"message_id": reply_id, "status": "pending"}
+
+
+def _answer(session_id: str, reply_id: int, text: str) -> None:
+    from app.analysis import agent_runner
+
+    conn = ledger.connect(config.DB_PATH)
+    log: list[dict] = []
+
+    def on_log(entry: dict) -> None:
+        log.append(entry)
+        ledger.update_analysis_message(conn, reply_id, tool_log=json.dumps(log, ensure_ascii=False))
+
+    try:
+        answer = agent_runner.answer(session_id, text, on_log)
+        ledger.update_analysis_message(conn, reply_id, status="done", text=answer)
+    except Exception as e:
+        message = str(e) if isinstance(e, RunError) else _describe(e)
+        ledger.update_analysis_message(conn, reply_id, status="failed", text=message)
         if not isinstance(e, RunError):
             traceback.print_exc()
     finally:

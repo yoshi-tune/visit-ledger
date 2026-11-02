@@ -123,9 +123,25 @@ CREATE TABLE analysis_runs (
     id_map_json  TEXT,
     funnel_json  TEXT,
     tool_log     TEXT,
-    report_json  TEXT
+    report_json  TEXT,
+    model        TEXT,
+    session_id   TEXT
 );
 """
+
+# 分析の続きの質問（壁打ち）。前の形の台帳にも足せるよう IF NOT EXISTS にする
+_MESSAGES_TABLE = """
+CREATE TABLE IF NOT EXISTS analysis_messages (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    analysis_id  TEXT NOT NULL REFERENCES analysis_runs(analysis_id),
+    at           TEXT NOT NULL,
+    role         TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
+    status       TEXT NOT NULL CHECK (status IN ('pending', 'done', 'failed')),
+    text         TEXT,
+    tool_log     TEXT
+);
+"""
+SCHEMA += _MESSAGES_TABLE
 
 
 class LedgerError(Exception):
@@ -142,6 +158,16 @@ def connect(path: str | Path) -> sqlite3.Connection:
 
 def init_schema(conn: sqlite3.Connection) -> None:
     conn.executescript(SCHEMA)
+
+
+def upgrade_schema(conn: sqlite3.Connection) -> None:
+    """前の形で作った台帳に、分析のモデル・セッションの列と、分析の続きの質問の表を足す（中身は消さない）。"""
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(analysis_runs)")}
+    with conn:
+        for col in ("model", "session_id"):
+            if col not in cols:
+                conn.execute(f"ALTER TABLE analysis_runs ADD COLUMN {col} TEXT")
+        conn.execute(_MESSAGES_TABLE)
 
 
 # ---- 店と施策 -------------------------------------------------------------
@@ -556,7 +582,8 @@ def list_reservations(conn: sqlite3.Connection, store_id: str) -> list[dict]:
 
 # ---- 分析の記録 -------------------------------------------------------------
 
-ANALYSIS_COLUMNS = ("status", "export_csv", "id_map_json", "funnel_json", "tool_log", "report_json")
+ANALYSIS_COLUMNS = ("status", "export_csv", "id_map_json", "funnel_json", "tool_log", "report_json",
+                    "model", "session_id")
 
 
 def create_analysis_run(conn: sqlite3.Connection, analysis_id: str, as_of: str, **fields: str) -> None:
@@ -590,6 +617,11 @@ def fail_unfinished_runs(conn: sqlite3.Connection, message: str) -> int:
             " WHERE status IN ('queued', 'running')",
             (message,),
         )
+        conn.execute(
+            "UPDATE analysis_messages SET status = 'failed',"
+            " text = 'サーバーが途中で止まったため、答えられませんでした。もう一度聞いてください。'"
+            " WHERE status = 'pending'"
+        )
     return cur.rowcount
 
 
@@ -598,3 +630,32 @@ def get_analysis_run(conn: sqlite3.Connection, analysis_id: str) -> dict | None:
         "SELECT * FROM analysis_runs WHERE analysis_id = ?", (analysis_id,)
     ).fetchone()
     return dict(row) if row else None
+
+
+def add_analysis_message(conn: sqlite3.Connection, analysis_id: str, at: str, role: str,
+                         status: str, text: str | None = None) -> int:
+    with conn:
+        cur = conn.execute(
+            "INSERT INTO analysis_messages (analysis_id, at, role, status, text, tool_log)"
+            " VALUES (?, ?, ?, ?, ?, '[]')",
+            (analysis_id, at, role, status, text),
+        )
+    return int(cur.lastrowid)
+
+
+def update_analysis_message(conn: sqlite3.Connection, message_id: int, **fields: str) -> None:
+    unknown = set(fields) - {"status", "text", "tool_log"}
+    if unknown or not fields:
+        raise LedgerError(f"analysis_messages に無い列です: {sorted(unknown)}")
+    with conn:
+        conn.execute(
+            f"UPDATE analysis_messages SET {', '.join(f'{k} = ?' for k in fields)} WHERE id = ?",
+            (*fields.values(), message_id),
+        )
+
+
+def list_analysis_messages(conn: sqlite3.Connection, analysis_id: str) -> list[dict]:
+    rows = conn.execute(
+        "SELECT * FROM analysis_messages WHERE analysis_id = ? ORDER BY id", (analysis_id,)
+    ).fetchall()
+    return [dict(r) for r in rows]

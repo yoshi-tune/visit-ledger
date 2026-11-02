@@ -1,0 +1,98 @@
+// @ts-check
+// 分析の報告と、案内役のひと言（効果の画面と分析の画面で使う）。
+import { el } from "./common.js";
+import { say } from "./mascot.js";
+
+/** @param {string} title @param {(Node | string)[]} children */
+const block = (title, children) => el("section", {}, [el("h3", {}, [title]), ...children]);
+
+/** @param {any} run */
+export function renderReport(run) {
+  const out = [];
+  if (run.error) out.push(el("div", { class: "error-box" }, [run.error]));
+  const r = run.report;
+  if (r) {
+    if (r.mode === "messages") {
+      out.push(el("p", { class: "banner" }, ["予備の形（1回の呼び出し）で書いた報告です。コードでの追加の集計はしていません。"]));
+    }
+    const rec = r.reconciliation;
+    out.push(block("検算", [
+      el("span", { class: rec.matches ? "ok-badge" : "bad-badge" }, [rec.matches ? "✓ アプリの数字と一致" : "! 食い違いあり"]),
+      el("p", { style: "margin-top:8px" }, [rec.summary]),
+      ...rec.differences.map((/** @type {string} */ d) => el("p", { class: rec.matches ? "muted" : "input-error" }, [d])),
+      ...(rec.matches ? [el("p", { class: "muted" }, ["同じ入力に対する2つの集計が一致した、という意味です（台帳そのものの正しさの証明ではありません）。"])] : []),
+    ]));
+    out.push(block("見立ての変化", [el("div", { class: "views" }, [
+      el("div", { class: "view" }, [el("div", { class: "muted" }, ["最初の見立て"]), el("p", {}, [r.first_view])]),
+      el("div", { class: "arrow", "aria-hidden": "true" }, ["→"]),
+      el("div", { class: "view after" }, [el("div", { class: "muted" }, ["集計を重ねた後"]), el("p", {}, [r.revised_view])]),
+    ])]));
+    out.push(block("集計を重ねた記録", [el("ol", { class: "timeline" }, (r.steps || []).map((/** @type {any} */ s) =>
+      el("li", {}, [
+        el("div", { class: "step-name" }, [s.step]),
+        el("div", {}, [el("b", {}, [s.question])]),
+        el("div", {}, [s.finding]),
+        el("div", { class: "muted" }, [`→ ${s.decision}`]),
+      ])))]));
+    const obs = el("table");
+    obs.append(el("tr", {}, [el("th", {}, ["観測した事実"]), el("th", { class: "r" }, ["数"]), el("th", {}, ["条件"]), el("th", {}, ["根拠"])]));
+    for (const o of r.observations || []) {
+      obs.append(el("tr", {}, [
+        el("td", {}, [o.statement]),
+        el("td", { class: "r" }, [`${o.numerator} / ${o.denominator}`]),
+        el("td", {}, [o.condition]),
+        el("td", { class: "muted" }, [(o.steps || []).join(", ")]),
+      ]));
+    }
+    out.push(block("観測した事実（台帳の数字で言えること）", [el("div", { class: "table-wrap" }, [obs])]));
+    out.push(block("原因の仮説（言い切りません）", (r.hypotheses || []).map((/** @type {any} */ h) =>
+      el("div", { class: "card", style: "box-shadow:none;margin-bottom:8px" }, [
+        el("p", {}, [el("b", {}, [h.statement])]),
+        el("p", { class: "small" }, [`支える観測：${h.supporting}`]),
+        el("p", { class: "small muted" }, [`確かめ方：${h.how_to_check}`]),
+      ]))));
+    out.push(block("台帳だけでは確かめられないこと", [el("ul", {}, (r.to_check || []).map((/** @type {string} */ t) => el("li", {}, [t])))]));
+    const n = r.next_action;
+    const dl = el("dl", {}, [
+      el("dt", {}, ["手間"]), el("dd", {}, [n.effort]),
+      el("dt", {}, ["見る数字"]), el("dd", {}, [n.metric]),
+      el("dt", {}, ["比べる相手"]), el("dd", {}, [n.comparison]),
+      el("dt", {}, ["仮置きの目標"]), el("dd", {}, [n.provisional_target]),
+    ]);
+    out.push(el("section", { class: "next-action" }, [
+      el("div", { class: "small" }, ["次の一手（店全体で1つ）"]),
+      el("div", { class: "action" }, [n.action]), dl,
+    ]));
+  }
+  const tools = (run.tool_log || []).filter((/** @type {any} */ e) => e.kind === "tool");
+  if (tools.length) {
+    const d = el("details", {}, [el("summary", {}, [`Claude が実行した道具の記録（${tools.length}件・アプリの側で記録）`])]);
+    for (const e of tools) {
+      const input = typeof e.input === "string" ? e.input : JSON.stringify(e.input, null, 1);
+      d.append(el("p", { class: "muted" }, [`${e.tool}${e.is_error ? "（失敗）" : ""}`]), el("pre", {}, [input || ""]),
+        el("pre", {}, [e.output || ""]));
+    }
+    out.push(d);
+  }
+  return out;
+}
+
+/** 案内役のひと言（分析の進み具合に合わせて表情を変える） @param {any} run */
+export function guide(run) {
+  const tools = (run.tool_log || []).filter((/** @type {any} */ e) => e.kind === "tool").length;
+  if (run.status === "queued" || run.status === "running") {
+    const text = el("span", { class: "row", style: "display:flex;gap:8px;align-items:center" }, [
+      el("span", { class: "spinner", "aria-hidden": "true" }),
+      `Claude が台帳を調べています…${tools ? `（集計の実行 ${tools}回）` : ""}`,
+    ]);
+    return say(text, "work");
+  }
+  if (run.status === "done" && run.report) {
+    const changed = run.report.first_view !== run.report.revised_view;
+    return say(changed
+      ? "調べ終わりました！集計を重ねて、見立てが変わりました。気になることは、チャットで続けて聞いてくださいね。"
+      : "調べ終わりました。見立ては変わりませんでしたが、根拠と次の一手をまとめました。気になることは、チャットで聞いてくださいね。", "cheer");
+  }
+  return say("うまく調べられませんでした。理由は下に書いてあります。", "think");
+}
+

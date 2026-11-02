@@ -27,7 +27,7 @@ NOTE = (
 
 
 def run(analysis_id: str, files: dict[str, str], funnel: dict,
-        on_log: Callable[[dict], None]) -> dict:
+        on_log: Callable[[dict], None], model: str = MODEL) -> dict:
     client = anthropic.Anthropic()
     system = (AGENT_DIR / "analyst_system.md").read_text(encoding="utf-8") + NOTE
     schema = json.loads((AGENT_DIR / "report_schema.json").read_text(encoding="utf-8"))
@@ -37,7 +37,7 @@ def run(analysis_id: str, files: dict[str, str], funnel: dict,
     on_log({"kind": "note", "detail": "予備の形（Messages API を1回）で分析しました。追加の集計はしていません。"})
 
     response = client.beta.messages.create(
-        model=MODEL,
+        model=model,
         max_tokens=16000,
         betas=["server-side-fallback-2026-07-01"],
         fallbacks="default",
