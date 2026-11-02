@@ -26,9 +26,7 @@ def _day(value: str | None) -> date | None:
 def reservation_state(reservation: dict, visited: bool, today: date) -> str:
     """予約1件を内訳の欄に振り分ける。"""
     status = reservation["status"]
-    if status == "requested":
-        return "requested"
-    if status in ("declined", "cancelled"):
+    if status == "cancelled":
         return status
     if visited:
         return "visited"
@@ -48,8 +46,7 @@ def compute(snapshot: dict, today: date, period_from: date, period_to: date) -> 
     session_src = {s["session_id"]: (s["campaign"], s["src"]) for s in snapshot["sessions"]}
 
     def empty_breakdown() -> dict:
-        return {k: 0 for k in ("total", "requested", "declined", "cancelled", "waiting",
-                               "visited", "unrecorded")}
+        return {k: 0 for k in ("total", "cancelled", "waiting", "visited", "unrecorded")}
 
     groups: dict[tuple[str, str], dict] = {}
     for c in snapshot["campaigns"]:

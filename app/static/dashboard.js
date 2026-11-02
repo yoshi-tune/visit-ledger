@@ -16,7 +16,7 @@ function kpi(c) {
     el("div", { class: "mini" }, [
       el("div", {}, [el("b", {}, [String(b.total)]), el("span", {}, ["予約"])]),
       el("div", {}, [el("b", {}, [String(b.waiting)]), el("span", {}, ["来店待ち"])]),
-      el("div", {}, [el("b", {}, [String(b.requested)]), el("span", {}, ["未連絡"])]),
+      el("div", {}, [el("b", {}, [String(b.cancelled)]), el("span", {}, ["取消"])]),
     ]),
   ]);
 }
@@ -35,8 +35,7 @@ function funnelCard(c) {
   });
   const b = c.reservations;
   const cells = [
-    ["予約", b.total], ["未連絡", b.requested], ["受けられない", b.declined], ["取消", b.cancelled],
-    ["来店待ち", b.waiting], ["来店", b.visited], ["来店未記録", b.unrecorded],
+    ["予約", b.total], ["取消", b.cancelled], ["来店待ち", b.waiting], ["来店", b.visited], ["来店未記録", b.unrecorded],
   ].map(([k, v]) => el("div", {}, [el("b", {}, [String(v)]), el("span", {}, [String(k)])]));
   return el("section", { class: "card" }, [
     el("h2", {}, [`${srcLabel(c.src)}：LP から予約まで`]),

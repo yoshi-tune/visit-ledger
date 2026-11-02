@@ -339,3 +339,27 @@ details > summary { cursor: pointer; font-weight: 700; color: var(--ink-2); padd
 }
 .page-loader.out { opacity: 0; pointer-events: none; }
 .contact-note { background: var(--warn-soft); color: var(--warn); border-radius: 10px; padding: 6px 10px; font-size: 0.875rem; font-weight: 700; }
+.choice:disabled { opacity: 0.4; cursor: default; background: var(--surface-2); }
+.slot-grid .choice .title { display: block; }
+.slot-grid .choice .desc { display: block; font-weight: 400; font-size: 0.8125rem; }
+
+/* ---- 店の設定 ---- */
+.setting-list { display: grid; gap: 8px; margin: 10px 0; }
+.setting-row { display: flex; align-items: center; gap: 12px; justify-content: space-between; background: var(--surface-2); border-radius: 12px; padding: 8px 12px; }
+.setting-row > b { min-width: 64px; }
+.stepper { display: inline-flex; align-items: center; gap: 10px; }
+.stepper .num { min-width: 40px; text-align: center; font-weight: 700; }
+.add-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+.add-row .input { width: auto; flex: 1 1 140px; min-height: 44px; }
+.weekday-row { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; margin-top: 8px; }
+.weekday-row .choice { text-align: center; padding: 10px 0; font-weight: 700; min-height: 48px; }
+.avail-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 8px; }
+.avail-day { background: var(--surface-2); border-radius: 12px; padding: 8px; text-align: center; }
+.avail-day .dow { font-size: 0.8125rem; color: var(--ink-2); }
+.avail-day .dow.sat { color: var(--series-line); }
+.avail-day .dow.sun { color: var(--bad); }
+.avail-day .date { font-weight: 800; font-size: 1.125rem; }
+.avail-day .left { font-size: 0.8125rem; }
+.avail-day.closed { background: transparent; border: 1.5px dashed var(--line); color: var(--muted); }
+.avail-day.full .left { color: var(--bad); font-weight: 700; }
+.save-bar { position: sticky; bottom: 0; display: flex; justify-content: flex-end; align-items: center; gap: 12px; padding: 12px 0; background: linear-gradient(to top, var(--bg) 70%, transparent); }

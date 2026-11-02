@@ -1,27 +1,30 @@
 """台帳の保存の層。SQL と状態の移り変わりの決まりは、このファイルにだけ書く（docs/DESIGN.md §3・§5）。
 
 日時はすべて呼び出し側から渡す（この層では「今」を読まない）。形式は "YYYY-MM-DDTHH:MM:SS"（店の現地時刻）。
+
+予約は、お客様が送った時点で確定する（11/2 に「希望の受付＋店から電話で確定」から切り替えた）。
+空き枠（時間帯ごとの台数）と休み（曜日・日付）は店のマスタとして台帳に持ち、予約を作る時にここで確かめる。
 """
 
 from __future__ import annotations
 
 import sqlite3
+from datetime import date
 from pathlib import Path
 
 MENUS = ("オイル交換", "タイヤ交換", "秋の点検")
 EVENT_NAMES = ("lp_view", "reserve_tap")
-# 電話の結果（つながって日時が決まったら confirm で記録する。ここは「決まらなかった」電話）
-CONTACT_RESULTS = ("no_answer", "callback")
 UNKNOWN = "unknown"
+WEEKDAYS = ("月", "火", "水", "木", "金", "土", "日")  # date.weekday() の順
 
 # 状態ごとに、次に移れる状態（DESIGN §3）
 TRANSITIONS: dict[str, tuple[str, ...]] = {
-    "requested": ("confirmed", "declined", "cancelled"),
     "confirmed": ("confirmed", "visited", "cancelled"),
     "visited": ("confirmed",),
-    "declined": (),
     "cancelled": (),
 }
+# 枠を使っている状態（取消は枠を空ける）
+HOLDING = ("confirmed", "visited")
 
 SCHEMA = """
 CREATE TABLE stores (
@@ -37,6 +40,28 @@ CREATE TABLE campaigns (
     started_on  TEXT,
     ended_on    TEXT,
     PRIMARY KEY (campaign, src, store_id)
+);
+
+-- 店のマスタ：時間帯ごとに受けられる台数
+CREATE TABLE slot_rules (
+    store_id TEXT NOT NULL REFERENCES stores(store_id),
+    slot     TEXT NOT NULL CHECK (length(slot) = 5),
+    capacity INTEGER NOT NULL CHECK (capacity >= 0),
+    PRIMARY KEY (store_id, slot)
+);
+
+-- 店のマスタ：休みの曜日（0=月 … 6=日）と、休みの日
+CREATE TABLE closed_weekdays (
+    store_id TEXT NOT NULL REFERENCES stores(store_id),
+    weekday  INTEGER NOT NULL CHECK (weekday BETWEEN 0 AND 6),
+    PRIMARY KEY (store_id, weekday)
+);
+
+CREATE TABLE closed_dates (
+    store_id TEXT NOT NULL REFERENCES stores(store_id),
+    day      TEXT NOT NULL,
+    note     TEXT,
+    PRIMARY KEY (store_id, day)
 );
 
 CREATE TABLE sessions (
@@ -64,9 +89,8 @@ CREATE TABLE reservations (
     store_id       TEXT NOT NULL,
     menu           TEXT NOT NULL,
     requested_for  TEXT NOT NULL,
-    confirmed_for  TEXT,
-    status         TEXT NOT NULL
-                   CHECK (status IN ('requested', 'confirmed', 'visited', 'declined', 'cancelled')),
+    confirmed_for  TEXT NOT NULL,
+    status         TEXT NOT NULL CHECK (status IN ('confirmed', 'visited', 'cancelled')),
     handled_by     TEXT,
     created_at     TEXT NOT NULL,
     updated_at     TEXT NOT NULL,
@@ -91,14 +115,6 @@ CREATE TABLE visits (
     recorded_at TEXT NOT NULL
 );
 
-CREATE TABLE contact_attempts (
-    id          INTEGER PRIMARY KEY,
-    reserve_no  TEXT NOT NULL REFERENCES reservations(reserve_no),
-    at          TEXT NOT NULL,
-    result      TEXT NOT NULL CHECK (result IN ('no_answer', 'callback')),
-    handled_by  TEXT NOT NULL
-);
-
 CREATE TABLE analysis_runs (
     analysis_id  TEXT PRIMARY KEY,
     as_of        TEXT NOT NULL,
@@ -113,7 +129,7 @@ CREATE TABLE analysis_runs (
 
 
 class LedgerError(Exception):
-    """台帳の決まりに合わない操作（存在しない予約、許されない状態の移り変わりなど）。"""
+    """台帳の決まりに合わない操作（存在しない予約、許されない状態の移り変わり、満席など）。"""
 
 
 def connect(path: str | Path) -> sqlite3.Connection:
@@ -155,6 +171,105 @@ def add_campaign(
             " VALUES (?, ?, ?, ?, ?, ?)",
             (campaign, src, store_id, distributed, started_on, ended_on),
         )
+
+
+# ---- 店のマスタ（空き枠と休み） ---------------------------------------------
+
+def get_master(conn: sqlite3.Connection, store_id: str) -> dict:
+    slots = _rows(
+        conn, "SELECT slot, capacity FROM slot_rules WHERE store_id = ? ORDER BY slot", (store_id,)
+    )
+    weekdays = [r["weekday"] for r in _rows(
+        conn, "SELECT weekday FROM closed_weekdays WHERE store_id = ? ORDER BY weekday", (store_id,)
+    )]
+    dates = _rows(
+        conn, "SELECT day, note FROM closed_dates WHERE store_id = ? ORDER BY day", (store_id,)
+    )
+    return {"slots": slots, "closed_weekdays": weekdays, "closed_dates": dates}
+
+
+def set_master(conn: sqlite3.Connection, store_id: str, slots: list[dict],
+               closed_weekdays: list[int], closed_dates: list[dict]) -> None:
+    """マスタを丸ごと置き換える。すでに入っている予約は動かさない（満席を超えても消さない）。"""
+    seen = set()
+    for s in slots:
+        slot = s["slot"]
+        if len(slot) != 5 or slot[2] != ":" or not (slot[:2] + slot[3:]).isdigit():
+            raise LedgerError(f"時間帯の形が読めません: {slot}")
+        if slot in seen:
+            raise LedgerError(f"同じ時間帯が2つあります: {slot}")
+        seen.add(slot)
+        if int(s["capacity"]) < 0:
+            raise LedgerError("台数は0以上にしてください")
+    for w in closed_weekdays:
+        if not 0 <= int(w) <= 6:
+            raise LedgerError(f"曜日が読めません: {w}")
+    for d in closed_dates:
+        date.fromisoformat(d["day"])
+    with conn:
+        conn.execute("DELETE FROM slot_rules WHERE store_id = ?", (store_id,))
+        conn.execute("DELETE FROM closed_weekdays WHERE store_id = ?", (store_id,))
+        conn.execute("DELETE FROM closed_dates WHERE store_id = ?", (store_id,))
+        conn.executemany(
+            "INSERT INTO slot_rules (store_id, slot, capacity) VALUES (?, ?, ?)",
+            [(store_id, s["slot"], int(s["capacity"])) for s in slots],
+        )
+        conn.executemany(
+            "INSERT INTO closed_weekdays (store_id, weekday) VALUES (?, ?)",
+            [(store_id, int(w)) for w in sorted(set(closed_weekdays))],
+        )
+        conn.executemany(
+            "INSERT INTO closed_dates (store_id, day, note) VALUES (?, ?, ?)",
+            [(store_id, d["day"], d.get("note") or None) for d in closed_dates],
+        )
+
+
+def availability(conn: sqlite3.Connection, store_id: str, day_from: str, day_to: str) -> list[dict]:
+    """日ごと・時間帯ごとの空き。休みの日は closed=True で枠を出さない。"""
+    master = get_master(conn, store_id)
+    closed_days = {d["day"] for d in master["closed_dates"]}
+    booked: dict[str, int] = {}
+    for r in _rows(
+        conn,
+        "SELECT substr(confirmed_for, 1, 16) AS at, COUNT(*) AS n FROM reservations"
+        f" WHERE store_id = ? AND status IN ({_q(HOLDING)}) AND date(confirmed_for) BETWEEN ? AND ?"
+        " GROUP BY substr(confirmed_for, 1, 16)",
+        (store_id, *HOLDING, day_from, day_to),
+    ):
+        booked[r["at"]] = r["n"]
+    out = []
+    d, end = date.fromisoformat(day_from), date.fromisoformat(day_to)
+    while d <= end:
+        iso = d.isoformat()
+        closed = iso in closed_days or d.weekday() in master["closed_weekdays"]
+        slots = [] if closed else [
+            {"slot": s["slot"], "capacity": s["capacity"],
+             "booked": booked.get(f"{iso}T{s['slot']}", 0),
+             "left": max(0, s["capacity"] - booked.get(f"{iso}T{s['slot']}", 0))}
+            for s in master["slots"]
+        ]
+        out.append({"day": iso, "closed": closed, "slots": slots})
+        d = date.fromordinal(d.toordinal() + 1)
+    return out
+
+
+def _check_slot(conn: sqlite3.Connection, store_id: str, when: str, exclude: str | None = None) -> None:
+    """その日時に、もう1台入れられるか。休み・枠の外・満席なら断る。"""
+    day, slot = when[:10], when[11:16]
+    master = get_master(conn, store_id)
+    if day in {d["day"] for d in master["closed_dates"]} or \
+            date.fromisoformat(day).weekday() in master["closed_weekdays"]:
+        raise LedgerError(f"{day} は休みです")
+    rule = next((s for s in master["slots"] if s["slot"] == slot), None)
+    if rule is None:
+        raise LedgerError(f"{slot} は受け付けている時間帯ではありません")
+    n = conn.execute(
+        f"SELECT COUNT(*) FROM reservations WHERE store_id = ? AND status IN ({_q(HOLDING)})"
+        " AND substr(confirmed_for, 1, 16) = ? AND reserve_no IS NOT ?",
+        (store_id, *HOLDING, f"{day}T{slot}", exclude),
+    ).fetchone()[0]
+    if n >= rule["capacity"]:
+        raise LedgerError(f"{day} {slot} は満席です")
 
 
 # ---- LP のセッションと出来事 -----------------------------------------------
@@ -201,12 +316,13 @@ def create_reservation(
     submit_key: str,
     session_id: str,
     menu: str,
-    requested_for: str,
+    reserved_for: str,
     created_at: str,
     customer_name: str,
     customer_phone: str,
 ) -> str:
-    """予約の希望を保存する。施策はセッションから写す。同じ送信キーなら既存の予約番号を返す。"""
+    """予約を作る（その場で確定）。施策はセッションから写す。同じ送信キーなら既存の予約番号を返す。
+    空き枠と休みは、書き込むのと同じトランザクションの中で確かめる（2人が同時に最後の1枠を取らないように）。"""
     existing = conn.execute(
         "SELECT reserve_no FROM reservations WHERE submit_key = ?", (submit_key,)
     ).fetchone()
@@ -219,33 +335,48 @@ def create_reservation(
     ).fetchone()
     if not session:
         raise LedgerError(f"セッションがありません: {session_id}")
-    with conn:
+    if reserved_for[:10] < created_at[:10]:
+        raise LedgerError("過ぎた日には予約できません")
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        _check_slot(conn, session["store_id"], reserved_for)
         conn.execute(
             "INSERT INTO reservations (reserve_no, submit_key, session_id, campaign, src, store_id,"
             " menu, requested_for, confirmed_for, status, handled_by, created_at, updated_at,"
             " customer_name, customer_phone)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, 'requested', NULL, ?, ?, ?, ?)",
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'confirmed', NULL, ?, ?, ?, ?)",
             (
                 reserve_no, submit_key, session_id, session["campaign"], session["src"],
-                session["store_id"], menu, requested_for, created_at, created_at,
+                session["store_id"], menu, reserved_for, reserved_for, created_at, created_at,
                 customer_name, customer_phone,
             ),
         )
-        _log_change(conn, reserve_no, created_at, None, "requested", None, None)
+        _log_change(conn, reserve_no, created_at, None, "confirmed", reserved_for, None)
+        conn.execute("COMMIT")
+    except Exception:
+        conn.execute("ROLLBACK")
+        raise
     return reserve_no
 
 
-def confirm(
-    conn: sqlite3.Connection, reserve_no: str, confirmed_for: str, at: str, handled_by: str
+def reschedule(
+    conn: sqlite3.Connection, reserve_no: str, new_for: str, at: str, handled_by: str
 ) -> None:
-    """店が確定日時を入れる。確定済みの予約に対しては日時の変更になる。"""
-    with conn:
-        _move(conn, reserve_no, "confirmed", at, handled_by, confirmed_for)
-
-
-def decline(conn: sqlite3.Connection, reserve_no: str, at: str, handled_by: str) -> None:
-    with conn:
-        _move(conn, reserve_no, "declined", at, handled_by)
+    """日時を変える（お客様から連絡があった時など、店が受付で行う）。新しい日時の空きも確かめる。"""
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        row = _get(conn, reserve_no)
+        store = conn.execute(
+            "SELECT store_id FROM reservations WHERE reserve_no = ?", (reserve_no,)
+        ).fetchone()["store_id"]
+        _check_slot(conn, store, new_for, exclude=reserve_no)
+        if row["status"] != "confirmed":
+            raise LedgerError(f"{reserve_no}: {row['status']} の予約は日時を変えられません")
+        _move(conn, reserve_no, "confirmed", at, handled_by, new_for)
+        conn.execute("COMMIT")
+    except Exception:
+        conn.execute("ROLLBACK")
+        raise
 
 
 def cancel(conn: sqlite3.Connection, reserve_no: str, at: str, handled_by: str) -> None:
@@ -278,6 +409,10 @@ def cancel_visit(conn: sqlite3.Connection, reserve_no: str, at: str, handled_by:
 
 
 # ---- 内部 -----------------------------------------------------------------
+
+def _q(values: tuple) -> str:
+    return ", ".join("?" * len(values))
+
 
 def _get(conn: sqlite3.Connection, reserve_no: str) -> sqlite3.Row:
     row = conn.execute(
@@ -408,36 +543,15 @@ def get_reservation(conn: sqlite3.Connection, reserve_no: str) -> dict | None:
 
 
 def list_reservations(conn: sqlite3.Connection, store_id: str) -> list[dict]:
-    """受付の画面用。名前での絞り込みは画面の側で行う（名前を URL やログに出さないため）。
-    最後に「決まらなかった電話」の記録と、その回数も付ける（交代した人が二度電話しないように）。"""
+    """受付の画面用。名前での絞り込みは画面の側で行う（名前を URL やログに出さないため）。"""
     return _rows(
         conn,
         "SELECT r.reserve_no, r.menu, r.requested_for, r.confirmed_for, r.status, r.handled_by,"
-        " r.created_at, r.src, r.customer_name, r.customer_phone, v.visited_at, v.recorded_at,"
-        " c.at AS last_contact_at, c.result AS last_contact_result, c.handled_by AS last_contact_by,"
-        " (SELECT COUNT(*) FROM contact_attempts x WHERE x.reserve_no = r.reserve_no) AS contact_count"
+        " r.created_at, r.src, r.customer_name, r.customer_phone, v.visited_at, v.recorded_at"
         " FROM reservations r LEFT JOIN visits v USING (reserve_no)"
-        " LEFT JOIN contact_attempts c ON c.id = ("
-        "   SELECT id FROM contact_attempts y WHERE y.reserve_no = r.reserve_no ORDER BY at DESC, id DESC LIMIT 1)"
-        " WHERE r.store_id = ? ORDER BY COALESCE(r.confirmed_for, r.requested_for), r.reserve_no",
+        " WHERE r.store_id = ? ORDER BY r.confirmed_for, r.reserve_no",
         (store_id,),
     )
-
-
-def record_contact(
-    conn: sqlite3.Connection, reserve_no: str, at: str, result: str, handled_by: str
-) -> None:
-    """日時が決まらなかった電話（不在・折り返し待ち）を記録する。予約の状態は変えない。"""
-    if result not in CONTACT_RESULTS:
-        raise LedgerError(f"知らない電話の結果です: {result}")
-    row = _get(conn, reserve_no)
-    if row["status"] not in ("requested", "confirmed"):
-        raise LedgerError(f"{reserve_no}: {row['status']} の予約には電話の記録を付けません")
-    with conn:
-        conn.execute(
-            "INSERT INTO contact_attempts (reserve_no, at, result, handled_by) VALUES (?, ?, ?, ?)",
-            (reserve_no, at, result, handled_by),
-        )
 
 
 # ---- 分析の記録 -------------------------------------------------------------

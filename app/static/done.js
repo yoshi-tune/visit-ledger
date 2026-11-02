@@ -3,7 +3,7 @@
 import { api, byId, el, fmtDateTime, pageLoading } from "./common.js";
 import { say } from "./mascot.js";
 
-byId("guide").append(say("ありがとうございます！店からの電話を待っていてくださいね。", "cheer", { size: 110, cls: "center" }));
+byId("guide").append(say("ありがとうございます！当日お待ちしていますね。", "cheer", { size: 110, cls: "center" }));
 
 const no = decodeURIComponent(location.pathname.split("/").pop() || "");
 
@@ -15,7 +15,7 @@ async function main() {
   if (conf.store) byId("store-name").textContent = conf.store.name;
   byId("no").textContent = r.reserve_no;
   const row = (/** @type {string} */ k, /** @type {string} */ v) => el("div", {}, [el("dt", {}, [k]), el("dd", {}, [v])]);
-  byId("summary").replaceChildren(row("メニュー", r.menu), row("希望の日時", fmtDateTime(r.requested_for)));
+  byId("summary").replaceChildren(row("メニュー", r.menu), row("ご来店", fmtDateTime(r.confirmed_for)));
 }
 
 main().finally(pageLoading()).catch((e) => { byId("error").textContent = `読み込めませんでした: ${e.message}`; });

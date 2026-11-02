@@ -1,46 +1,47 @@
 // @ts-check
-// 受付：店の確定・受けられない・取消、来店の記録と取り消し、名前での検索、押し忘れの後日記録。
+// 受付：今日の予約に来店を付ける・来店の取り消し・日時の変更・取消・名前で探す・押し忘れの後日記録。
+// 予約はお客様が送った時点で確定しているので、店から電話で確定する作業は無い。
 // 名前での検索は画面の中だけで行う（名前を URL やログに出さない）。
-import { addDays, api, byId, dateTimePicker, el, fmtDateTime, fmtDay, pageLoading, srcLabel, toast } from "./common.js";
+import { addDays, api, availabilityPicker, byId, el, fmtDateTime, fmtDay, pageLoading, srcLabel, toast } from "./common.js";
 import { mascot, say } from "./mascot.js";
 
+/** @typedef {{reserve_no: string, menu: string, requested_for: string, confirmed_for: string,
+ *   status: string, src: string, customer_name: string, customer_phone: string,
+ *   visited_at: string | null, recorded_at: string | null, created_at: string}} Reservation */
+
+const STATUS = { confirmed: "予約", visited: "来店", cancelled: "取消" };
+const HINT = {
+  today: "お客様が来たら「来店」。時間の早い順に並んでいます。",
+  visited: "今日来たお客様です。間違えて押した来店は「来店を取り消す」で予約に戻せます。",
+  upcoming: "明日からの予約です。お客様から連絡があったら、日時を変えるか取消にします。",
+  search: "お名前の一部で探せます（すべての予約から）。",
+  past: "来店予定日がその日で、来店の記録が無い予約を出します。来ていたら「この日に来店」。",
+};
 /** 一覧が空の時のひと言 */
 const EMPTY = {
-  requested: ["未連絡はゼロです。おつかれさまです！", "cheer"],
   today: ["今日の予約は、ほかにありません。", "normal"],
   visited: ["今日の来店はまだありません。", "normal"],
+  upcoming: ["明日からの予約は、まだありません。", "normal"],
   search: ["見つかりませんでした。別の書き方でも探してみてください。", "think"],
-  past: ["この確定日で、来店の記録が無い予約はありません。", "happy"],
+  past: ["この日が来店予定で、来店の記録が無い予約はありません。", "happy"],
 };
-
-/** @typedef {{reserve_no: string, menu: string, requested_for: string, confirmed_for: string | null,
- *   status: string, src: string, customer_name: string, customer_phone: string,
- *   visited_at: string | null, recorded_at: string | null, last_contact_at: string | null,
- *   last_contact_result: string | null, last_contact_by: string | null, contact_count: number}} Reservation */
-
-const STATUS = { requested: "未連絡", confirmed: "確定", visited: "来店", declined: "受けられない", cancelled: "取消" };
-const HINT = {
-  requested: "電話で日時を決めたら「日時を決めて確定」。つながらなかった時は「不在」か「折り返し待ち」を押すと、次の人に引き継げます。",
-  today: "お客様が来たら「来店」。時間の早い順に並んでいます。",
-  visited: "間違えて押した来店は「取り消す」で確定に戻せます。",
-  search: "お名前の一部で探せます（すべての予約から）。",
-  past: "確定日がその日で、来店の記録が無い予約を出します。来ていたら「この日に来店」。",
-};
+const REFRESH_MS = 30000;
 
 /** @type {Reservation[]} */
 let all = [];
 /** @type {any} */
 let conf = null;
-let tab = sessionStorage.getItem("vl:desk-tab") || "requested";
+let tab = sessionStorage.getItem("vl:desk-tab") || "today";
+if (!(tab in HINT)) tab = "today";
 let staff = sessionStorage.getItem("vl:staff") || "A";
 let query = "";
 let pastDay = "";
-/** 開いている「日時を選ぶ」欄 */
+/** 開いている「日時を変える」欄 */
 let openPicker = "";
+/** @type {any[]} */
+let avail = [];
 
 const day = (/** @type {string | null} */ iso) => (iso || "").slice(0, 10);
-const CONTACT = { no_answer: "不在", callback: "折り返し待ち" };
-const REFRESH_MS = 30000;
 
 /** @param {string} path @param {object} body @param {string} done @param {string} [method] @param {boolean} [cheer] */
 async function act(path, body, done, method, cheer = false) {
@@ -65,91 +66,75 @@ function btn(label, fn, cls = "btn") {
 function card(r) {
   const no = encodeURIComponent(r.reserve_no);
   const isToday = tab === "today" || tab === "visited";
-  const when = r.confirmed_for || r.requested_for;
   const top = el("div", { class: "top" }, [
     el("div", {}, [
       el("div", { class: "name" }, [`${r.customer_name} 様`]),
       el("a", { href: `tel:${r.customer_phone}`, class: "small" }, [r.customer_phone]),
     ]),
     isToday
-      ? el("div", { class: "time" }, [(r.confirmed_for || "").slice(11, 16)])
+      ? el("div", { class: "time" }, [r.confirmed_for.slice(11, 16)])
       : el("span", { class: `status ${r.status}` }, [STATUS[/** @type {keyof typeof STATUS} */ (r.status)] || r.status]),
   ]);
   const meta = el("div", { class: "meta" }, [
     el("span", {}, [r.menu]),
-    el("span", {}, [r.status === "requested" ? `希望 ${fmtDateTime(r.requested_for)}` : `確定 ${fmtDateTime(when)}`]),
+    el("span", {}, [`来店予定 ${fmtDateTime(r.confirmed_for)}`]),
     el("span", { class: "tag" }, [el("span", { class: `dot ${r.src}` }), srcLabel(r.src)]),
     el("span", { class: "muted" }, [r.reserve_no]),
   ]);
   const actions = el("div", { class: "actions" });
-  const box = el("div", { class: "card rcard" }, [top, meta]);
-  if (r.last_contact_at && (r.status === "requested" || r.status === "confirmed")) {
-    box.append(el("div", { class: "contact-note" }, [
-      `最後の電話：${fmtDateTime(r.last_contact_at)} ${CONTACT[/** @type {keyof typeof CONTACT} */ (r.last_contact_result)] || r.last_contact_result}（${r.last_contact_by}）`,
-      r.contact_count > 1 ? ` ・ ${r.contact_count}回目` : "",
-    ]));
-  }
-  box.append(actions);
+  const box = el("div", { class: "card rcard" }, [top, meta, actions]);
 
   if (tab === "past") {
     actions.append(btn(`${fmtDay(pastDay)} に来店`, () => act("/api/visits",
       { reserve_no: r.reserve_no, visited_on: pastDay }, `${r.customer_name} 様の来店を ${fmtDay(pastDay)} に記録しました`, undefined, true), "btn block"));
     return box;
   }
-  if (r.status === "requested") {
-    actions.append(btn("日時を決めて確定", () => { openPicker = openPicker === r.reserve_no ? "" : r.reserve_no; render(); }, "btn"));
-    actions.append(btn("不在", () => act(`/api/reservations/${no}/contact`, { result: "no_answer" }, `${r.customer_name} 様：不在を記録しました`), "btn soft sm"));
-    actions.append(btn("折り返し待ち", () => act(`/api/reservations/${no}/contact`, { result: "callback" }, `${r.customer_name} 様：折り返し待ちを記録しました`), "btn soft sm"));
-  }
   if (r.status === "confirmed") {
-    actions.append(btn("来店", () => act("/api/visits", { reserve_no: r.reserve_no }, `${r.customer_name} 様、いらっしゃいませ！来店を記録しました`, undefined, true), "btn lg"));
-    actions.append(btn("日時を変える", () => { openPicker = openPicker === r.reserve_no ? "" : r.reserve_no; render(); }, "btn soft"));
+    if (day(r.confirmed_for) <= conf.today) {
+      actions.append(btn("来店", () => act("/api/visits", { reserve_no: r.reserve_no }, `${r.customer_name} 様、いらっしゃいませ！来店を記録しました`, undefined, true), "btn lg"));
+    }
+    actions.append(btn("日時を変える", async () => {
+      openPicker = openPicker === r.reserve_no ? "" : r.reserve_no;
+      if (openPicker) avail = (await api(`/api/availability?days=${conf.days_ahead}`)).days;
+      render();
+    }, "btn soft"));
   }
   if (r.status === "visited") {
     actions.append(btn("来店を取り消す", () => {
-      if (confirm(`${r.customer_name} 様の来店の記録を取り消して、確定に戻しますか？`)) {
+      if (confirm(`${r.customer_name} 様の来店の記録を取り消して、予約に戻しますか？`)) {
         act(`/api/visits/${no}`, {}, "来店を取り消しました", "DELETE");
       }
     }, "btn danger"));
   }
   if (openPicker === r.reserve_no) {
     /** @type {string | null} */
-    let chosen = (r.confirmed_for || r.requested_for).slice(0, 16);
-    const ok = /** @type {HTMLButtonElement} */ (btn("この日時で確定", () => {
-      if (chosen) act(`/api/reservations/${no}/confirm`, { confirmed_for: chosen }, `${fmtDateTime(chosen)} で確定しました`);
+    let chosen = r.confirmed_for.slice(0, 16);
+    const ok = /** @type {HTMLButtonElement} */ (btn("この日時に変える", () => {
+      if (chosen) act(`/api/reservations/${no}/reschedule`, { confirmed_for: chosen }, `${fmtDateTime(chosen)} に変えました`);
     }, "btn block"));
-    const picker = dateTimePicker({
-      today: conf.today, days: conf.days_ahead, slots: conf.slots, value: chosen,
-      onChange: (v) => { chosen = v; ok.disabled = !v; },
+    ok.disabled = true;
+    const picker = availabilityPicker({
+      today: conf.today, days: avail, value: chosen,
+      onChange: (v) => { chosen = v; ok.disabled = !v || v === r.confirmed_for.slice(0, 16); },
     });
-    const more = el("div", { class: "actions" });
-    if (r.status === "requested") {
-      more.append(btn("受けられない", () => {
-        if (confirm("この希望を「受けられない」にしますか？")) act(`/api/reservations/${no}/decline`, {}, "受けられないにしました");
-      }, "btn danger sm"));
-    }
-    more.append(btn("お客様の都合で取消", () => {
-      if (confirm("この予約を取消にしますか？")) act(`/api/reservations/${no}/cancel`, {}, "取消にしました");
-    }, "btn danger sm"));
+    const more = el("div", { class: "actions" }, [
+      btn("お客様の都合で取消", () => {
+        if (confirm("この予約を取消にしますか？（枠が空きます）")) act(`/api/reservations/${no}/cancel`, {}, "取消にしました");
+      }, "btn danger sm"),
+    ]);
     box.append(el("div", { class: "picker" }, [picker, ok, more]));
   }
   return box;
 }
 
 function render() {
-  const requested = all.filter((r) => r.status === "requested");
-  const todayList = all.filter((r) => r.status === "confirmed" && day(r.confirmed_for) === conf.today)
-    .sort((a, b) => (a.confirmed_for || "").localeCompare(b.confirmed_for || ""));
+  const todayList = all.filter((r) => r.status === "confirmed" && day(r.confirmed_for) === conf.today);
   // 今日の来店は「来た日」で出す（昨日の来店を今日記録したものは入れない）
   const visited = all.filter((r) => r.status === "visited" && day(r.visited_at) === conf.today);
-  const setCount = (/** @type {string} */ id, /** @type {number} */ n, hot = false) => {
-    const c = byId(id);
-    c.textContent = String(n);
-    c.className = hot && n ? "count hot" : "count";
-  };
-  setCount("c-requested", requested.length, true);
-  setCount("c-today", todayList.length);
-  setCount("c-visited", visited.length);
+  const upcoming = all.filter((r) => r.status === "confirmed" && day(r.confirmed_for) > conf.today);
+  byId("c-today").textContent = String(todayList.length);
+  byId("c-visited").textContent = String(visited.length);
+  byId("c-upcoming").textContent = String(upcoming.length);
   for (const b of document.querySelectorAll(".tabs button")) {
     b.setAttribute("aria-selected", String(/** @type {HTMLElement} */ (b).dataset.tab === tab));
   }
@@ -158,9 +143,9 @@ function render() {
   const extra = byId("extra");
   /** @type {Reservation[]} */
   let rows = [];
-  if (tab === "requested") { rows = requested; extra.replaceChildren(); }
-  else if (tab === "today") { rows = todayList; extra.replaceChildren(); }
+  if (tab === "today") { rows = todayList; extra.replaceChildren(); }
   else if (tab === "visited") { rows = visited; extra.replaceChildren(); }
+  else if (tab === "upcoming") { rows = upcoming; extra.replaceChildren(); }
   else if (tab === "search") {
     if (!extra.querySelector("input")) {
       const input = /** @type {HTMLInputElement} */ (el("input", { class: "input search", placeholder: "お名前の一部", "aria-label": "お名前" }));
@@ -194,8 +179,7 @@ function render() {
   }
 
   const list = byId("list");
-  list.replaceChildren(...(rows.length ? rows.map(card)
-    : [emptyState()]));
+  list.replaceChildren(...(rows.length ? rows.map(card) : [emptyState()]));
 }
 
 function emptyState() {
@@ -215,7 +199,7 @@ async function load() {
   render();
 }
 
-/** 開きっぱなしでも新しい希望に気づけるよう、定期的に読み直す。日時を選んでいる途中は邪魔しない */
+/** 開きっぱなしでも新しい予約に気づけるよう、定期的に読み直す。日時を選んでいる途中は邪魔しない */
 async function refresh() {
   if (openPicker || document.hidden) return;
   try { await load(); } catch { byId("updated").textContent = "更新できませんでした（通信を確かめてください）"; }
@@ -237,7 +221,7 @@ async function main() {
   }
   for (const b of document.querySelectorAll(".tabs button")) {
     b.addEventListener("click", () => {
-      tab = /** @type {HTMLElement} */ (b).dataset.tab || "requested";
+      tab = /** @type {HTMLElement} */ (b).dataset.tab || "today";
       sessionStorage.setItem("vl:desk-tab", tab);
       openPicker = "";
       byId("extra").replaceChildren();

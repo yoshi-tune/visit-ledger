@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>店の設定</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="app-header">
+    <div class="brand">店の設定<small id="store"></small></div>
+    <nav class="app-nav"><a href="/desk">受付</a><a href="/dashboard">効果</a><a href="/settings" aria-current="page">店の設定</a></nav>
+  </header>
+  <main class="app-main">
+    <div id="guide"></div>
+    <div class="two">
+      <section class="card">
+        <h2>時間帯と、受けられる台数</h2>
+        <p class="muted">お客様の予約の画面には、ここで決めた時間帯だけが出ます。台数を超える予約は入りません。</p>
+        <div id="slots" class="setting-list"></div>
+        <div class="row add-row">
+          <input id="new-slot" class="input" type="time" step="1800" aria-label="足す時間帯">
+          <button id="add-slot" class="btn soft" type="button">時間帯を足す</button>
+        </div>
+      </section>
+      <section class="card">
+        <h2>休みの曜日</h2>
+        <div id="weekdays" class="weekday-row" role="group" aria-label="休みの曜日"></div>
+        <h2 style="margin-top:20px">休みの日</h2>
+        <p class="muted">臨時の休みや、研修の日など。</p>
+        <div id="dates" class="setting-list"></div>
+        <div class="row add-row">
+          <input id="new-date" class="input" type="date" aria-label="休みにする日">
+          <input id="new-note" class="input" placeholder="メモ（任意）" aria-label="メモ">
+          <button id="add-date" class="btn soft" type="button">休みの日を足す</button>
+        </div>
+      </section>
+    </div>
+    <section class="card">
+      <h2>これからの14日の空き</h2>
+      <p class="muted">保存した設定と、今入っている予約から数えた空きです。</p>
+      <div id="preview" class="avail-grid"></div>
+    </section>
+    <div class="save-bar">
+      <span id="dirty" class="muted"></span>
+      <button id="save" class="btn" type="button">この設定で保存</button>
+    </div>
+  </main>
+  <script type="module" src="/static/settings.js"></script>
+</body>
+</html>

@@ -34,7 +34,7 @@ async function main() {
     byId("store-name").textContent = conf.store.name;
     document.title = `秋の点検キャンペーン｜${conf.store.name}`;
   }
-  byId("guide").append(say("ネットで希望を送るだけ。日時は店から電話で決めますよ。", "happy"));
+  byId("guide").append(say("空いている日時を選ぶだけで、その場で予約が確定しますよ。", "happy"));
   const list = byId("menus");
   for (const m of conf.menus) {
     const b = el("button", { type: "button", class: "choice" }, [

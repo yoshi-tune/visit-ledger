@@ -99,7 +99,12 @@ def dashboard_page() -> FileResponse:
     return page("dashboard.html")
 
 
-# ---- API：設定 ----------------------------------------------------------------
+@app.get("/settings", include_in_schema=False)
+def settings_page() -> FileResponse:
+    return page("settings.html")
+
+
+# ---- API：設定と店のマスタ ---------------------------------------------------------
 
 @app.get("/api/config")
 def get_config(conn: sqlite3.Connection = Depends(get_conn)) -> dict:
@@ -108,12 +113,51 @@ def get_config(conn: sqlite3.Connection = Depends(get_conn)) -> dict:
         "today": config.TODAY.isoformat(),
         "store": store,
         "menus": list(ledger.MENUS),
-        # 予約の希望で選べる時間帯と日数（空き枠の管理はしない。確定は店から電話）
-        "slots": ["10:00", "11:00", "13:00", "14:00", "15:00", "16:00"],
-        "days_ahead": 14,
+        "days_ahead": 14,  # お客様が予約できるのは「今日」から何日先まで
         "staff": ["A", "B"],
+        "weekdays": list(ledger.WEEKDAYS),
         "period": {"from": config.PERIOD_FROM.isoformat(), "to": config.PERIOD_TO.isoformat()},
     }
+
+
+@app.get("/api/availability")
+def get_availability(days: int = 14, conn: sqlite3.Connection = Depends(get_conn)) -> dict:
+    """「今日」から days 日分の、日ごと・時間帯ごとの空き（お客様の画面用。名前などは返さない）。"""
+    days = max(1, min(days, 60))
+    start = config.TODAY.isoformat()
+    end = date.fromordinal(config.TODAY.toordinal() + days - 1).isoformat()
+    return {"today": start, "days": ledger.availability(conn, config.STORE_ID, start, end)}
+
+
+@app.get("/api/master")
+def get_master(conn: sqlite3.Connection = Depends(get_conn)) -> dict:
+    return ledger.get_master(conn, config.STORE_ID)
+
+
+class SlotIn(BaseModel):
+    slot: str
+    capacity: int
+
+
+class ClosedDateIn(BaseModel):
+    day: str
+    note: str | None = None
+
+
+class MasterIn(BaseModel):
+    staff: str
+    slots: list[SlotIn]
+    closed_weekdays: list[int]
+    closed_dates: list[ClosedDateIn]
+
+
+@app.put("/api/master")
+def put_master(body: MasterIn, conn: sqlite3.Connection = Depends(get_conn)) -> dict:
+    """店の設定（時間帯ごとの台数・休み）を変える。すでに入っている予約は動かさない。"""
+    guard(ledger.set_master, conn, config.STORE_ID,
+          [s.model_dump() for s in body.slots], body.closed_weekdays,
+          [d.model_dump() for d in body.closed_dates])
+    return ledger.get_master(conn, config.STORE_ID)
 
 
 # ---- API：LP とセッション -------------------------------------------------------
@@ -154,7 +198,7 @@ class ReservationIn(BaseModel):
     session_id: str
     submit_key: str = Field(min_length=8)
     menu: str
-    requested_for: str
+    reserved_for: str
     customer_name: str = Field(min_length=1)
     customer_phone: str = Field(min_length=1)
 
@@ -167,7 +211,7 @@ def create_reservation(body: ReservationIn, conn: sqlite3.Connection = Depends(g
     reserve_no = guard(
         ledger.create_reservation, conn,
         reserve_no=no, submit_key=body.submit_key, session_id=body.session_id, menu=body.menu,
-        requested_for=normalize(body.requested_for), created_at=fmt(config.now()),
+        reserved_for=normalize(body.reserved_for), created_at=fmt(config.now()),
         customer_name=body.customer_name, customer_phone=body.customer_phone,
     )
     return {"reserve_no": reserve_no}
@@ -182,40 +226,25 @@ def list_reservations(conn: sqlite3.Connection = Depends(get_conn)) -> dict:
 
 @app.get("/api/reservations/{reserve_no}/public")
 def reservation_public(reserve_no: str, conn: sqlite3.Connection = Depends(get_conn)) -> dict:
-    """受付の完了画面用。名前・電話は返さない。"""
+    """予約の完了画面用。名前・電話は返さない。"""
     r = ledger.get_reservation(conn, reserve_no)
     if not r:
         raise HTTPException(404, "予約がありません")
-    return {k: r[k] for k in ("reserve_no", "menu", "requested_for", "status")}
+    return {k: r[k] for k in ("reserve_no", "menu", "confirmed_for", "status")}
 
 
 class StaffIn(BaseModel):
     staff: str
 
 
-class ConfirmIn(StaffIn):
+class RescheduleIn(StaffIn):
     confirmed_for: str
 
 
-@app.post("/api/reservations/{reserve_no}/confirm")
-def confirm(reserve_no: str, body: ConfirmIn, conn: sqlite3.Connection = Depends(get_conn)) -> dict:
-    guard(ledger.confirm, conn, reserve_no, normalize(body.confirmed_for), fmt(config.now()), body.staff)
-    return {"ok": True}
-
-
-class ContactIn(StaffIn):
-    result: str  # no_answer（不在）/ callback（折り返し待ち）
-
-
-@app.post("/api/reservations/{reserve_no}/contact")
-def contact(reserve_no: str, body: ContactIn, conn: sqlite3.Connection = Depends(get_conn)) -> dict:
-    guard(ledger.record_contact, conn, reserve_no, fmt(config.now()), body.result, body.staff)
-    return {"ok": True}
-
-
-@app.post("/api/reservations/{reserve_no}/decline")
-def decline(reserve_no: str, body: StaffIn, conn: sqlite3.Connection = Depends(get_conn)) -> dict:
-    guard(ledger.decline, conn, reserve_no, fmt(config.now()), body.staff)
+@app.post("/api/reservations/{reserve_no}/reschedule")
+def reschedule(reserve_no: str, body: RescheduleIn, conn: sqlite3.Connection = Depends(get_conn)) -> dict:
+    """日時を変える（お客様から連絡があった時に店が行う）。新しい日時の空きもここで確かめる。"""
+    guard(ledger.reschedule, conn, reserve_no, normalize(body.confirmed_for), fmt(config.now()), body.staff)
     return {"ok": True}
 
 

@@ -20,6 +20,11 @@ SAMPLE_TO = date(2026, 10, 31)
 
 STORE_ID = "S-EKI"
 
+# 店のマスタの初期値（見本データを作る時に入れる。あとは受付側の「店の設定」で変える）
+DEFAULT_SLOTS = ("10:00", "11:00", "13:00", "14:00", "15:00", "16:00")
+DEFAULT_CAPACITY = 2          # 時間帯ごとに受けられる台数（作業場が2つ）
+DEFAULT_CLOSED_WEEKDAYS = (2,)  # 毎週水曜は休み（0=月 … 6=日）
+
 DB_PATH = ROOT / "data" / "ledger.db"
 
 

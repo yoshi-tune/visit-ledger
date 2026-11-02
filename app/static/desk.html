@@ -9,7 +9,7 @@
 <body>
   <header class="app-header">
     <div class="brand">受付<small id="store"></small></div>
-    <nav class="app-nav"><a href="/desk" aria-current="page">受付</a><a href="/dashboard">効果</a></nav>
+    <nav class="app-nav"><a href="/desk" aria-current="page">受付</a><a href="/dashboard">効果</a><a href="/settings">店の設定</a></nav>
   </header>
   <main class="app-main">
     <div class="toolbar">
@@ -23,9 +23,9 @@
       </div>
     </div>
     <div class="tabs" role="tablist">
-      <button role="tab" data-tab="requested">未連絡<span class="count" id="c-requested"></span></button>
       <button role="tab" data-tab="today">今日の予約<span class="count" id="c-today"></span></button>
       <button role="tab" data-tab="visited">今日の来店<span class="count" id="c-visited"></span></button>
+      <button role="tab" data-tab="upcoming">これからの予約<span class="count" id="c-upcoming"></span></button>
       <button role="tab" data-tab="search">名前で探す</button>
       <button role="tab" data-tab="past">押し忘れ</button>
     </div>

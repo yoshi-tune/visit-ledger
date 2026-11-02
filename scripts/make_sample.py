@@ -4,11 +4,12 @@
     uv run python scripts/make_sample.py --no-plant    # 仕込みなし（でっち上げないかの確認用）
 
 乱数の種と入力の並び順を固定しているので、誰が回しても同じ台帳になる。
-来店の結果はさいころで決めず、(媒体 × 予約から確定日までの日数) のマスごとに件数の割合で割り当てる。
+来店の結果はさいころで決めず、(媒体 × 予約から来店予定日までの日数) のマスごとに件数の割合で割り当てる。
+予約は店のマスタ（時間帯ごとの台数・休みの曜日）を守って入れる。満席の枠や休みの日には入れない。
 
 ## 仕込み（明かしておく）
 
-- 来店率は「予約を送った日から確定日までの日数」で変わる：3日以内 90%・4〜7日 80%・8日以上 60%
+- 来店率は「予約した日から来店予定日までの日数」で変わる：3日以内 90%・4〜7日 80%・8日以上 60%
 - チラシの予約は先の日に入りやすく、LINE の予約は近い日に入りやすい
 - そのため媒体別に見るとチラシの来店率が低く見えるが、日数で分けると同じ日数の中では差が消える
 - --no-plant では、どの日数でも来店率 82%（日数の割合は同じ）。媒体の差も日数の差も出ない
@@ -27,14 +28,17 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from app import ledger  # noqa: E402
-from app.config import DB_PATH, PERIOD_FROM, PERIOD_TO, SAMPLE_FROM, SAMPLE_TO, STORE_ID, TODAY  # noqa: E402
+from app.config import (  # noqa: E402
+    DB_PATH, DEFAULT_CAPACITY, DEFAULT_CLOSED_WEEKDAYS, DEFAULT_SLOTS, PERIOD_FROM, PERIOD_TO,
+    SAMPLE_FROM, SAMPLE_TO, STORE_ID, TODAY,
+)
 
 SEED = 20261102
 STORE_NAME = "駅前店"
 CAMPAIGN = "autumn_check_202610"
 STAFF = ("A", "B")
 
-# 予約から確定日までの日数のマス：(最小, 最大)
+# 予約した日から来店予定日までの日数のマス：(最小, 最大)
 BUCKETS = ((1, 3), (4, 7), (8, 14))
 VISIT_RATE = {"plant": (0.90, 0.80, 0.60), "no_plant": (0.82, 0.82, 0.82)}
 
@@ -48,11 +52,10 @@ SRC_ORDER = ("flyer", "line")
 # メニューの割合（どちらの媒体でも同じ。比べる軸を媒体だけにするため）
 MENU_SHARE = (("オイル交換", 0.40), ("タイヤ交換", 0.35), ("秋の点検", 0.25))
 
-N_REQUESTED = 2     # 店から未連絡のまま
-N_TODAY = 3         # 確定日が「今日」（受付の一覧に出す）
-# 受けられない・取消の件数（媒体, 受けられない, 取消）。媒体に偏ると、仕込みに無い傾向になる
-DECLINED_CANCELLED = (("flyer", 1, 2), ("line", 2, 2))
-N_RESCHEDULED = 10
+N_TODAY = 3         # 来店予定日が「今日」（受付の一覧に出す）
+# お客様の都合の取消（媒体, 件数）。媒体に偏ると、仕込みに無い傾向になる
+CANCELLED = (("flyer", 3), ("line", 4))
+N_RESCHEDULED = 10  # お客様から連絡があって、店が日時を変えた予約
 N_LATE_RECORD = 2   # 押し忘れて翌日に記録した来店
 N_UNDO = 1          # 間違えて付けて取り消した来店
 
@@ -88,6 +91,44 @@ def quota(total: int, shares: tuple[tuple[str, float], ...]) -> list[str]:
     return [name for (name, _), c in zip(shares, counts) for _ in range(c)]
 
 
+class Calendar:
+    """マスタ（時間帯ごとの台数・休みの曜日）どおりに、空いている枠を探す。"""
+
+    def __init__(self, rng: random.Random) -> None:
+        self.rng = rng
+        self.used: dict[tuple[date, str], int] = {}
+
+    def open_day(self, d: date) -> bool:
+        return d.weekday() not in DEFAULT_CLOSED_WEEKDAYS
+
+    def free_slots(self, d: date, exclude: str | None = None) -> list[str]:
+        return [s for s in DEFAULT_SLOTS
+                if s != exclude and self.used.get((d, s), 0) < DEFAULT_CAPACITY]
+
+    def take(self, d: date, s: str) -> None:
+        self.used[(d, s)] = self.used.get((d, s), 0) + 1
+
+    def give(self, d: date, s: str) -> None:
+        self.used[(d, s)] -= 1
+
+    def place(self, start: date, lead: int, bucket: int, before: date | None = None) -> tuple[date, str]:
+        """予約した日 start から lead 日後を基本に、同じマスの中で、休みでなく空きのある日と時間帯を選ぶ。"""
+        lo, hi = BUCKETS[bucket]
+        tries = [lead] + [x for k in range(1, 8) for x in (lead + k, lead - k)]
+        for n in tries:
+            if not lo <= n <= hi:
+                continue
+            d = start + timedelta(days=n)
+            if not self.open_day(d) or (before and d >= before):
+                continue
+            free = self.free_slots(d)
+            if free:
+                s = self.rng.choice(free)
+                self.take(d, s)
+                return d, s
+        raise RuntimeError(f"空き枠が見つかりません: {start} +{lead}")
+
+
 def build(out: Path, plant: bool) -> None:
     rng = random.Random(SEED)
     if out.exists():
@@ -97,6 +138,9 @@ def build(out: Path, plant: bool) -> None:
     ledger.init_schema(conn)
 
     ledger.add_store(conn, STORE_ID, STORE_NAME)
+    ledger.set_master(conn, STORE_ID,
+                      [{"slot": s, "capacity": DEFAULT_CAPACITY} for s in DEFAULT_SLOTS],
+                      list(DEFAULT_CLOSED_WEEKDAYS), [])
     for src in SRC_ORDER:
         ledger.add_campaign(
             conn, CAMPAIGN, src, STORE_ID, SOURCES[src]["distributed"],
@@ -134,17 +178,17 @@ def build(out: Path, plant: bool) -> None:
         rng.shuffle(menus)
         specs = [b for b, n in enumerate(SOURCES[src]["buckets"]) for _ in range(n)]
         pool = [s for s in sessions if s["src"] == src and s["campaign"] == CAMPAIGN]
-        # 長い日数から先に割り当てる（確定日が「今日」より前に収まるセッションを選ぶため）
+        # 長い日数から先に割り当てる（来店予定日が「今日」より前に収まるセッションを選ぶため）
         for b in sorted(specs, reverse=True):
             lead = rng.randint(*BUCKETS[b])
             free = [s for s in pool if s["reservations"] == 0]
             if b == len(BUCKETS) - 1:
-                free = [s for s in free if s["start"].date() + timedelta(days=lead) < TODAY]
+                free = [s for s in free if s["start"].date() + timedelta(days=lead + 2) < TODAY]
             s = rng.choice(free)
             s["reservations"] += 1
-            drafts.append({"src": src, "session": s, "lead": lead, "menu": menus.pop()})
+            drafts.append({"src": src, "session": s, "lead": lead, "bucket": b, "menu": menus.pop()})
     # 1つのセッションから2台分の予約
-    line_short = [d for d in drafts if d["src"] == "line" and bucket_of(d["lead"]) == 0]
+    line_short = [d for d in drafts if d["src"] == "line" and d["bucket"] == 0]
     first, second = line_short[0], line_short[1]
     second["session"]["reservations"] -= 1
     second["session"] = first["session"]
@@ -153,53 +197,62 @@ def build(out: Path, plant: bool) -> None:
     # 施策不明のセッションからの予約
     unknown = [s for s in sessions if s["campaign"] != CAMPAIGN][0]
     unknown["reservations"] = 1
-    drafts.append({"src": "unknown", "session": unknown, "lead": 2, "menu": "オイル交換"})
+    drafts.append({"src": "unknown", "session": unknown, "lead": 2, "bucket": 0, "menu": "オイル交換"})
 
     for d in drafts:
         tap = d["session"]["start"] + timedelta(minutes=rng.randint(1, 5))
         d["tap"] = tap
         d["created"] = tap + timedelta(minutes=rng.randint(2, 6) + d.get("same_session_offset", 0))
-        d["confirmed_for"] = at_time(d["created"].date() + timedelta(days=d["lead"]),
-                                     rng.randint(9, 16))
         d["kind"] = "confirmed"
     drafts.sort(key=lambda d: (d["created"], d["src"], d["session"]["id"]))
 
-    # ---- 例外の割り当て -------------------------------------------------------
+    # ---- 枠に入れる（予約した順に。マスタを守る） ------------------------------
+    cal = Calendar(rng)
     plain = [d for d in drafts if d["src"] != "unknown"]
     latest = sorted(plain, key=lambda d: d["created"], reverse=True)
-    for d in [x for x in latest if bucket_of(x["lead"]) == 0][:N_REQUESTED]:
-        d["kind"] = "requested"
-    for d in [x for x in latest if x["kind"] == "confirmed"
-              and 1 <= (TODAY - x["created"].date()).days <= 14][:N_TODAY]:
-        d["kind"] = "today"
-        d["confirmed_for"] = at_time(TODAY, rng.choice((10, 13, 15)))
-    for src, n_declined, n_cancelled in DECLINED_CANCELLED:
-        rest = [d for d in plain if d["src"] == src and d["kind"] == "confirmed"
-                and bucket_of(d["lead"]) < 2]
-        picked = rng.sample(rest, n_declined + n_cancelled)
-        for d in picked[:n_declined]:
-            d["kind"] = "declined"
-        for d in picked[n_declined:]:
+    today_ids = set()
+    for d in latest:
+        if len(today_ids) == N_TODAY:
+            break
+        if 1 <= (TODAY - d["created"].date()).days <= 14:
+            today_ids.add(id(d))
+    for d in drafts:
+        if id(d) in today_ids:  # 来店予定日が「今日」
+            s = rng.choice(cal.free_slots(TODAY))
+            cal.take(TODAY, s)
+            day, slot = TODAY, s
+            d["kind"] = "today"
+        else:
+            before = TODAY if d["bucket"] == len(BUCKETS) - 1 else None
+            day, slot = cal.place(d["created"].date(), d["lead"], d["bucket"], before)
+        d["booked_for"] = datetime.combine(day, time.fromisoformat(slot))
+        d["confirmed_for"] = d["booked_for"]
+
+    # お客様の都合の取消
+    for src, n in CANCELLED:
+        rest = [d for d in plain if d["src"] == src and d["kind"] == "confirmed" and d["bucket"] < 2]
+        for d in rng.sample(rest, n):
             d["kind"] = "cancelled"
-    confirmed = [d for d in drafts if d["kind"] in ("confirmed", "today")]
-    for d in rng.sample(confirmed, N_RESCHEDULED):
+    # 日時の変更：同じ日の別の空いている時間帯へ（日数のマスは変えない）
+    movable = [d for d in drafts if d["kind"] in ("confirmed", "today")]
+    for d in rng.sample(movable, N_RESCHEDULED):
+        day, old = d["booked_for"].date(), d["booked_for"].strftime("%H:%M")
+        free = cal.free_slots(day, exclude=old)
+        if not free:
+            continue
+        new = rng.choice(free)
+        cal.give(day, old)
+        cal.take(day, new)
+        d["confirmed_for"] = datetime.combine(day, time.fromisoformat(new))
         d["rescheduled"] = True
 
-    # 希望日時：日時を変えた予約は、確定日時とずらす（送った日より後に収める）
-    for d in drafts:
-        req = d["confirmed_for"]
-        if d.get("rescheduled"):
-            shift = rng.choice((-2, -1, 1, 2))
-            cand = req + timedelta(days=shift)
-            req = cand if cand.date() > d["created"].date() else req + timedelta(days=abs(shift))
-        d["requested_for"] = req
-
-    # 来店：マスごとに件数の割合で割り当てる（確定日が「今日」より前のものだけが対象）
+    # 来店：マスごとに件数の割合で割り当てる（来店予定日が「今日」より前のものだけが対象）
     rates = VISIT_RATE["plant" if plant else "no_plant"]
     for src in (*SRC_ORDER, "unknown"):
         for b in range(len(BUCKETS)):
             cell = [d for d in drafts if d["src"] == src and d["kind"] == "confirmed"
-                    and bucket_of(d["lead"]) == b and d["confirmed_for"].date() < TODAY]
+                    and bucket_of((d["confirmed_for"].date() - d["created"].date()).days) == b
+                    and d["confirmed_for"].date() < TODAY]
             n_visit = round(len(cell) * rates[b]) if src != "unknown" else len(cell)
             for d in rng.sample(cell, n_visit):
                 d["visited"] = True
@@ -248,30 +301,21 @@ def build(out: Path, plant: bool) -> None:
         created = d["created"]
         args = dict(
             reserve_no=no, submit_key=key, session_id=d["session"]["id"], menu=d["menu"],
-            requested_for=fmt(d["requested_for"]), created_at=fmt(created),
+            reserved_for=fmt(d["booked_for"]), created_at=fmt(created),
             customer_name=f"見本 {i:03d}", customer_phone=f"090-0000-{i:04d}",
         )
         ledger.create_reservation(conn, **args)
         if i % 17 == 0:  # 2重送信：同じ送信キーなら同じ予約番号が返り、行は増えない
             assert ledger.create_reservation(conn, **args) == no
-        if d["kind"] == "requested":
-            continue
 
-        # 店からの連絡：送った数時間後〜翌日。確定日の朝と「今日」の朝より前に収める
-        limit = min(at_time(d["confirmed_for"].date(), 8), at_time(TODAY, 8))
-        contact = min(created + timedelta(hours=rng.randint(1, 20)), limit)
-        contact = max(contact, created + timedelta(minutes=10))
-        if d["kind"] == "declined":
-            ledger.decline(conn, no, fmt(contact), staff)
-            continue
+        # お客様から連絡があって店が変える・取り消すのは、予約の数時間後〜来店予定日の朝の間
+        limit = min(at_time(d["booked_for"].date(), 8), at_time(TODAY, 8))
+        later = min(created + timedelta(hours=rng.randint(2, 40)), limit)
+        later = max(later, created + timedelta(minutes=10))
         if d.get("rescheduled"):
-            ledger.confirm(conn, no, fmt(d["requested_for"]), fmt(contact), staff)
-            contact = min(contact + timedelta(hours=rng.randint(2, 30)), limit)
-            contact = max(contact, created + timedelta(minutes=20))
-        ledger.confirm(conn, no, fmt(d["confirmed_for"]), fmt(contact), staff)
+            ledger.reschedule(conn, no, fmt(d["confirmed_for"]), fmt(later), staff)
         if d["kind"] == "cancelled":
-            ledger.cancel(conn, no, fmt(min(contact + timedelta(hours=rng.randint(3, 48)), limit)),
-                          staff)
+            ledger.cancel(conn, no, fmt(later), staff)
             continue
         if d.get("visited"):
             visited_at = d["confirmed_for"] + timedelta(minutes=rng.randint(-10, 20))
