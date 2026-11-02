@@ -1,7 +1,7 @@
 """visit-ledger の入口。画面（app/static）と API をつなぐ。SQL は書かない（保存の層 app/ledger.py を通す）。
 
-    uv run python scripts/make_sample.py   # 見本の台帳を作る（最初に1回）
-    uv run uvicorn app.main:app --reload    # http://127.0.0.1:8000/
+    uv run uvicorn app.main:app --reload    # http://127.0.0.1:8000/（台帳が無ければ見本を作る）
+    uv run python scripts/make_sample.py   # 見本の台帳を作り直す時
 """
 
 from __future__ import annotations
@@ -20,10 +20,14 @@ from pydantic import BaseModel, Field
 from app import analysis, config, funnel, ledger
 
 if not config.DB_PATH.exists():
-    raise SystemExit(
-        f"台帳がありません: {config.DB_PATH}\n"
-        "先に `uv run python scripts/make_sample.py` で見本の台帳を作ってください。"
-    )
+    # 初めての起動：見本の台帳を作る（scripts/make_sample.py と同じ中身。作り直す時はそちらを回す）
+    import importlib.util
+
+    _spec = importlib.util.spec_from_file_location("make_sample", config.ROOT / "scripts" / "make_sample.py")
+    _sample = importlib.util.module_from_spec(_spec)
+    _spec.loader.exec_module(_sample)
+    _sample.build(config.DB_PATH, plant=True)
+    print(f"見本の台帳を作りました: {config.DB_PATH}")
 
 with ledger.connect(config.DB_PATH) as _conn:
     ledger.upgrade_schema(_conn)
