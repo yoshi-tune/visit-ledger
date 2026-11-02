@@ -28,7 +28,8 @@ DESCRIPTION = (
 
 
 def run(analysis_id: str, files: dict[str, str], funnel: dict,
-        on_log: Callable[[dict], None], model: str = config.DEFAULT_MODEL) -> dict:
+        on_log: Callable[[dict], None], model: str = config.DEFAULT_MODEL,
+        previous: dict | None = None) -> dict:
     if not IDS.exists():
         raise RunError("分析エージェントの準備がまだです。`uv run python scripts/setup_agent.py` を先に回してください。")
     ids = json.loads(IDS.read_text(encoding="utf-8"))
@@ -37,6 +38,9 @@ def run(analysis_id: str, files: dict[str, str], funnel: dict,
     uploads = {
         **{name: (text, "text/csv") for name, text in files.items()},
         "funnel.json": (json.dumps(funnel, ensure_ascii=False, indent=1), "application/json"),
+        # 前回の分析の「次の一手」とその時の数字。前回が無い時も {"had_previous": false} を必ず置く
+        "previous.json": (json.dumps(previous or {"had_previous": False}, ensure_ascii=False, indent=1),
+                          "application/json"),
         "report_schema.json": ((AGENT_DIR / "report_schema.json").read_text(encoding="utf-8"),
                                "application/json"),
     }

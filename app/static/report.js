@@ -27,6 +27,19 @@ export function renderReport(run) {
     if (r.mode === "messages") {
       out.push(el("p", { class: "banner" }, ["予備の形（1回の呼び出し）で書いた報告です。コードでの追加の集計はしていません。"]));
     }
+    // 前回の分析の「次の一手」のその後（前回がある時だけ。項目が無い前の報告・見本の報告には出さない）
+    const pr = r.previous_review;
+    if (pr && pr.had_previous) {
+      out.push(block("前回の一手のその後", [
+        el("p", { class: "muted" }, [`前回の一手：${pr.action}`]),
+        el("div", { class: "views" }, [
+          el("div", { class: "view" }, [el("div", { class: "muted" }, ["前回の分析の時点"]), el("p", {}, [pr.before])]),
+          el("div", { class: "arrow", "aria-hidden": "true" }, ["→"]),
+          el("div", { class: "view after" }, [el("div", { class: "muted" }, ["今"]), el("p", {}, [pr.after])]),
+        ]),
+        el("p", {}, [pr.finding]),
+      ]));
+    }
     const rec = r.reconciliation;
     // 先に読むもの：見立ての変化・次の一手・仮説。残りは開いた時だけ見る（検算は食い違いがある時だけ開いておく）
     out.push(block("見立ての変化", [el("div", { class: "views" }, [

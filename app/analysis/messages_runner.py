@@ -27,12 +27,14 @@ NOTE = (
 
 
 def run(analysis_id: str, files: dict[str, str], funnel: dict,
-        on_log: Callable[[dict], None], model: str = MODEL) -> dict:
+        on_log: Callable[[dict], None], model: str = MODEL, previous: dict | None = None) -> dict:
     client = anthropic.Anthropic()
     system = (AGENT_DIR / "analyst_system.md").read_text(encoding="utf-8") + NOTE
     schema = json.loads((AGENT_DIR / "report_schema.json").read_text(encoding="utf-8"))
 
     parts = [f"## funnel.json\n```json\n{json.dumps(funnel, ensure_ascii=False, indent=1)}\n```"]
+    prev = json.dumps(previous or {"had_previous": False}, ensure_ascii=False, indent=1)
+    parts.append(f"## previous.json\n```json\n{prev}\n```")
     parts += [f"## {name}\n```csv\n{text}```" for name, text in files.items()]
     on_log({"kind": "note", "detail": "予備の形（Messages API を1回）で分析しました。追加の集計はしていません。"})
 

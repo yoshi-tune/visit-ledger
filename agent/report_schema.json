@@ -2,7 +2,7 @@
   "type": "object",
   "additionalProperties": false,
   "required": ["as_of", "period", "reconciliation", "first_view", "steps", "revised_view", "view_changed",
-               "observations", "hypotheses", "to_check", "next_action"],
+               "observations", "hypotheses", "to_check", "next_action", "previous_review"],
   "properties": {
     "as_of": {"type": "string", "description": "基準日（YYYY-MM-DD）"},
     "period": {
@@ -63,6 +63,18 @@
       }
     },
     "to_check": {"type": "array", "items": {"type": "string"}, "description": "台帳だけでは確かめられないこと"},
+    "previous_review": {
+      "type": "object", "additionalProperties": false,
+      "description": "前回の分析の「次の一手」のその後。前回が無ければ had_previous を false にし、残りは空の文字",
+      "required": ["had_previous", "action", "before", "after", "finding"],
+      "properties": {
+        "had_previous": {"type": "boolean"},
+        "action": {"type": "string", "description": "前回の次の一手（短く）"},
+        "before": {"type": "string", "description": "前回の分析の時点の数字（件数・割合）"},
+        "after": {"type": "string", "description": "今の数字（同じ数え方）"},
+        "finding": {"type": "string", "description": "何が変わったか・その内訳（記録の直し／新しい予約・来店）。3文まで。効果と言い切らない"}
+      }
+    },
     "next_action": {
       "type": "object", "additionalProperties": false,
       "required": ["action", "effort", "metric", "comparison", "provisional_target"],

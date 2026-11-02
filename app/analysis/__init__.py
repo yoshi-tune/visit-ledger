@@ -47,6 +47,7 @@ def start(conn, snapshot: dict, funnel: dict, model: str = config.DEFAULT_MODEL)
             report_json=json.dumps({**sample["report"], "mode": "sample"}, ensure_ascii=False),
         )
         return {"analysis_id": analysis_id, "status": "done"}
+    previous = _previous(conn)
     ledger.create_analysis_run(
         conn, analysis_id, funnel["as_of"],
         status="queued",
@@ -55,9 +56,28 @@ def start(conn, snapshot: dict, funnel: dict, model: str = config.DEFAULT_MODEL)
         funnel_json=json.dumps(funnel, ensure_ascii=False),
         tool_log="[]",
         model=model,
+        previous_json=json.dumps(previous, ensure_ascii=False),
     )
     threading.Thread(target=_run, args=(analysis_id,), daemon=True).start()
     return {"analysis_id": analysis_id, "status": "queued"}
+
+
+def _previous(conn) -> dict:
+    """前回の分析の「次の一手」と、その時の数字（エージェントに previous.json として渡す）。
+    分析どうしは同じ基準日のこともあるので、日付ではなく「前回の分析の時点」の数字で比べさせる。
+    仮の番号は書き出しのたびに振り直すので渡さない（数字と一手の文だけ）。"""
+    run = ledger.latest_reviewable_run(conn)
+    if not run:
+        return {"had_previous": False}
+    report = json.loads(run["report_json"])
+    return {
+        "had_previous": True,
+        "analysis_id": run["analysis_id"],
+        "as_of": run["as_of"],
+        "next_action": report["next_action"],
+        "revised_view": report["revised_view"],
+        "funnel": json.loads(run["funnel_json"]),
+    }
 
 
 def get(conn, analysis_id: str) -> dict | None:
@@ -113,7 +133,8 @@ def _run(analysis_id: str) -> None:
         else:
             from app.analysis import agent_runner as runner
         model = run["model"] or config.DEFAULT_MODEL
-        report = runner.run(analysis_id, files, funnel, on_log, model)
+        previous = json.loads(run["previous_json"] or '{"had_previous": false}')
+        report = runner.run(analysis_id, files, funnel, on_log, model, previous)
 
         for note in check_report(report, log if mode != "messages" else None):
             on_log({"kind": "note", "detail": note})

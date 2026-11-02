@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from datetime import date
 from pathlib import Path
@@ -126,7 +127,8 @@ CREATE TABLE analysis_runs (
     report_json  TEXT,
     model        TEXT,
     session_id   TEXT,
-    cost_cents   INTEGER
+    cost_cents   INTEGER,
+    previous_json TEXT
 );
 """
 
@@ -162,10 +164,11 @@ def init_schema(conn: sqlite3.Connection) -> None:
 
 
 def upgrade_schema(conn: sqlite3.Connection) -> None:
-    """前の形で作った台帳に、分析のモデル・セッションの列と、分析の続きの質問の表を足す（中身は消さない）。"""
+    """前の形で作った台帳に、分析のモデル・セッション・前回の分析の列と、分析の続きの質問の表を足す（中身は消さない）。"""
     cols = {r["name"] for r in conn.execute("PRAGMA table_info(analysis_runs)")}
     with conn:
-        for col, kind in (("model", "TEXT"), ("session_id", "TEXT"), ("cost_cents", "INTEGER")):
+        for col, kind in (("model", "TEXT"), ("session_id", "TEXT"), ("cost_cents", "INTEGER"),
+                          ("previous_json", "TEXT")):
             if col not in cols:
                 conn.execute(f"ALTER TABLE analysis_runs ADD COLUMN {col} {kind}")
         conn.execute(_MESSAGES_TABLE)
@@ -584,7 +587,7 @@ def list_reservations(conn: sqlite3.Connection, store_id: str) -> list[dict]:
 # ---- 分析の記録 -------------------------------------------------------------
 
 ANALYSIS_COLUMNS = ("status", "export_csv", "id_map_json", "funnel_json", "tool_log", "report_json",
-                    "model", "session_id", "cost_cents")
+                    "model", "session_id", "cost_cents", "previous_json")
 
 
 def create_analysis_run(conn: sqlite3.Connection, analysis_id: str, as_of: str, **fields: str) -> None:
@@ -626,6 +629,17 @@ def fail_pending_messages(conn: sqlite3.Connection) -> None:
             " text = 'サーバーが途中で止まったため、答えられませんでした。もう一度聞いてください。'"
             " WHERE status = 'pending'"
         )
+
+
+def latest_reviewable_run(conn: sqlite3.Connection) -> dict | None:
+    """振り返りの元にする、いちばん新しい「終わった本物の分析」（見本の報告と失敗は除く）。"""
+    for row in conn.execute(
+        "SELECT * FROM analysis_runs WHERE status = 'done' AND report_json IS NOT NULL ORDER BY rowid DESC"
+    ):
+        report = json.loads(row["report_json"])
+        if "error" not in report and report.get("mode") != "sample" and "next_action" in report:
+            return dict(row)
+    return None
 
 
 def get_analysis_run(conn: sqlite3.Connection, analysis_id: str) -> dict | None:
