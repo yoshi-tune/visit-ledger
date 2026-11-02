@@ -58,6 +58,8 @@ def get(conn, analysis_id: str) -> dict | None:
         "report": None,
         "error": None,
         "can_ask": bool(_session_id(run)) and run["status"] == "done",
+        "cost_cents": run["cost_cents"],
+        "budget_cents": config.BUDGET_CENTS,
         "messages": [
             {"id": m["id"], "at": m["at"], "role": m["role"], "status": m["status"], "text": m["text"],
              "tool_log": json.loads(m["tool_log"] or "[]")}
@@ -102,6 +104,7 @@ def _run(analysis_id: str) -> None:
         ledger.update_analysis_run(
             conn, analysis_id, status="done", report_json=json.dumps(report, ensure_ascii=False)
         )
+        _record_cost(conn, analysis_id)
     except Exception as e:  # 裏の処理なので、理由を記録して画面に出す
         message = str(e) if isinstance(e, RunError) else _describe(e)
         ledger.update_analysis_run(
@@ -144,11 +147,79 @@ def ask(conn, analysis_id: str, text: str) -> dict:
     at = config.now().isoformat(timespec="seconds")
     ledger.add_analysis_message(conn, analysis_id, at, "user", "done", text.strip())
     reply_id = ledger.add_analysis_message(conn, analysis_id, at, "assistant", "pending")
-    threading.Thread(target=_answer, args=(session_id, reply_id, text.strip()), daemon=True).start()
+    threading.Thread(target=_answer, args=(analysis_id, session_id, reply_id, text.strip()),
+                     daemon=True).start()
     return {"message_id": reply_id, "status": "pending"}
 
 
-def _answer(session_id: str, reply_id: int, text: str) -> None:
+# ---- サーバーを立ち上げ直した時 -------------------------------------------------
+
+def resume_unfinished(conn) -> None:
+    """前回のサーバーで終わらなかった分析を引き継ぐ。エージェントのセッションは Anthropic の側で
+    動き続けているので、セッションがあれば終わるのを待って報告を受け取る。無ければ「失敗」にする。"""
+    ledger.fail_pending_messages(conn)
+    for run in ledger.list_unfinished_runs(conn):
+        session_id = _session_id(run)
+        if session_id:
+            threading.Thread(target=_resume, args=(run["analysis_id"], session_id), daemon=True).start()
+        else:
+            ledger.update_analysis_run(conn, run["analysis_id"], status="failed", report_json=json.dumps(
+                {"error": "サーバーが途中で止まったため、分析が終わりませんでした。もう一度頼んでください。"},
+                ensure_ascii=False))
+
+
+def _resume(analysis_id: str, session_id: str) -> None:
+    import time
+
+    import anthropic
+
+    from app.analysis import agent_runner
+
+    conn = ledger.connect(config.DB_PATH)
+    try:
+        run = ledger.get_analysis_run(conn, analysis_id)
+        log = json.loads(run["tool_log"] or "[]")
+        log.append({"kind": "note", "detail": "サーバーを立ち上げ直したので、エージェントの続きを待って受け取りました。"})
+        ledger.update_analysis_run(conn, analysis_id, status="running",
+                                   tool_log=json.dumps(log, ensure_ascii=False))
+        client = anthropic.Anthropic()
+        for _ in range(80):  # 最大でおよそ20分待つ
+            if client.beta.sessions.retrieve(session_id).status in ("idle", "terminated"):
+                break
+            time.sleep(15)
+        report = agent_runner._fetch_report(client, session_id)
+        missing = [k for k in REQUIRED_KEYS if k not in report]
+        if missing:
+            raise RunError(f"報告に足りない項目があります: {', '.join(missing)}")
+        report["mode"] = "agent"
+        ledger.update_analysis_run(conn, analysis_id, status="done",
+                                   report_json=json.dumps(report, ensure_ascii=False))
+        _record_cost(conn, analysis_id)
+    except Exception as e:
+        message = str(e) if isinstance(e, RunError) else _describe(e)
+        ledger.update_analysis_run(conn, analysis_id, status="failed",
+                                   report_json=json.dumps({"error": message}, ensure_ascii=False))
+    finally:
+        conn.close()
+
+
+def _record_cost(conn, analysis_id: str) -> None:
+    run = ledger.get_analysis_run(conn, analysis_id)
+    session_id = _session_id(run) if run else None
+    if not session_id:
+        return
+    from app.analysis import agent_runner
+
+    cents = agent_runner.session_cost_cents(session_id)
+    if cents is not None:
+        ledger.update_analysis_run(conn, analysis_id, cost_cents=cents)
+
+
+def costs(conn) -> dict:
+    return {"budget_cents": config.BUDGET_CENTS, "by_model": ledger.analysis_cost_summary(conn, config.DEFAULT_MODEL)}
+
+
+def _answer(analysis_id: str, session_id: str, reply_id: int, text: str) -> None:
     from app.analysis import agent_runner
 
     conn = ledger.connect(config.DB_PATH)
@@ -167,6 +238,7 @@ def _answer(session_id: str, reply_id: int, text: str) -> None:
         if not isinstance(e, RunError):
             traceback.print_exc()
     finally:
+        _record_cost(conn, analysis_id)
         conn.close()
 
 

@@ -59,6 +59,11 @@ async function loadFunnel() {
 /** @type {string} */
 let model = "";
 
+/** @param {number} cents */
+const usd = (cents) => `$${(cents / 100).toFixed(2)}`;
+/** @type {any} */
+let costs = { budget_cents: 300, by_model: [] };
+
 /** @param {any} conf */
 function renderModels(conf) {
   model = localStorage.getItem("vl:model") || conf.default_model;
@@ -67,6 +72,7 @@ function renderModels(conf) {
     const b = el("button", { type: "button", class: "choice", "aria-pressed": String(m.id === model) }, [
       el("span", { class: "title" }, [m.label + (m.id === conf.default_model ? "（既定）" : "")]),
       el("span", { class: "desc" }, [m.note]),
+      ...measured(m.id),
     ]);
     b.addEventListener("click", () => {
       model = m.id;
@@ -75,6 +81,19 @@ function renderModels(conf) {
     });
     return b;
   }));
+}
+
+/** これまでに実際にかかった額（目安） @param {string} id */
+function measured(id) {
+  const c = costs.by_model.find((/** @type {any} */ x) => x.model === id);
+  return c ? [el("span", { class: "desc cost" }, [`これまで ${c.runs}回・1回 平均 ${usd(c.avg_cents)}`])] : [];
+}
+
+function renderCostNote() {
+  const total = costs.by_model.reduce((/** @type {number} */ n, /** @type {any} */ c) => n + (c.total_cents || 0), 0);
+  byId("cost-note").textContent = `1回の上限 ${usd(costs.budget_cents)}（続けての質問も含む）`
+    + (total ? `・これまでの合計の目安 ${usd(total)}` : "")
+    + "。目安は定価で数えた額です。正しい額は Claude Console で確かめてください。";
 }
 
 /** 前に頼んだ分析への入口 @param {string} id */
@@ -104,7 +123,9 @@ ask.addEventListener("click", async () => {
 async function main() {
   const conf = await api("/api/config");
   if (conf.store) byId("store").textContent = conf.store.name;
+  costs = await api("/api/analysis-costs").catch(() => costs);
   renderModels(conf);
+  renderCostNote();
   await loadFunnel();
   const last = sessionStorage.getItem("vl:analysis");
   if (last) showLast(last);

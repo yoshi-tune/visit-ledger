@@ -25,12 +25,10 @@ if not config.DB_PATH.exists():
         "先に `uv run python scripts/make_sample.py` で見本の台帳を作ってください。"
     )
 
-# 前回のサーバーで終わらなかった分析は、実行中のまま残さず「失敗」にする（もう一度頼めるように）
 with ledger.connect(config.DB_PATH) as _conn:
     ledger.upgrade_schema(_conn)
-    ledger.fail_unfinished_runs(_conn, json.dumps(
-        {"error": "サーバーが途中で止まったため、分析が終わりませんでした。もう一度頼んでください。"},
-        ensure_ascii=False))
+    # 前回のサーバーで終わらなかった分析は、エージェントのセッションがあれば引き継ぐ（無ければ「失敗」にして頼み直せるように）
+    analysis.resume_unfinished(_conn)
 
 STATIC = config.ROOT / "app" / "static"
 app = FastAPI(title="visit-ledger")
@@ -331,6 +329,12 @@ def start_analysis(body: AnalysisIn | None = None,
         raise HTTPException(400, f"選べないモデルです: {model}")
     snap, fun = current_funnel(conn)
     return analysis.start(conn, snap, fun, model)
+
+
+@app.get("/api/analysis-costs")
+def analysis_costs(conn: sqlite3.Connection = Depends(get_conn)) -> dict:
+    """モデルごとの分析の費用の目安（定価で数えた額。正しい額は Claude Console で見る）。"""
+    return analysis.costs(conn)
 
 
 @app.post("/api/analysis/{analysis_id}/messages")

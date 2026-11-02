@@ -54,7 +54,7 @@ def run(analysis_id: str, files: dict[str, str], funnel: dict,
         resources=resources,
         # 1回の分析で使う量の上限（セント単位の文字列。既定 $3.00）。続きの質問もこの中で答える
         budget={"type": "limit",
-                "max_list_cost": {"amount": os.environ.get("VL_BUDGET_CENTS", "300"),
+                "max_list_cost": {"amount": str(config.BUDGET_CENTS),
                                   "currency": "USD"}},
     )
     on_log({"kind": "session", "session_id": session.id, "model": model})
@@ -139,6 +139,15 @@ def _drive(client: anthropic.Anthropic, session_id: str, first_event: dict,
                 stop = "terminated"
                 break
     return stop, texts
+
+
+def session_cost_cents(session_id: str) -> int | None:
+    """セッションがここまでに使った額（定価で数えた目安・セント）。取れなければ None。"""
+    try:
+        usage = anthropic.Anthropic().beta.sessions.retrieve(session_id).usage
+        return int(round(float(usage.list_cost.amount)))
+    except Exception:  # 費用が取れなくても、分析や答えは失敗にしない
+        return None
 
 
 def _fetch_report(client: anthropic.Anthropic, session_id: str) -> dict:

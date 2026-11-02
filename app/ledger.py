@@ -125,7 +125,8 @@ CREATE TABLE analysis_runs (
     tool_log     TEXT,
     report_json  TEXT,
     model        TEXT,
-    session_id   TEXT
+    session_id   TEXT,
+    cost_cents   INTEGER
 );
 """
 
@@ -164,9 +165,9 @@ def upgrade_schema(conn: sqlite3.Connection) -> None:
     """前の形で作った台帳に、分析のモデル・セッションの列と、分析の続きの質問の表を足す（中身は消さない）。"""
     cols = {r["name"] for r in conn.execute("PRAGMA table_info(analysis_runs)")}
     with conn:
-        for col in ("model", "session_id"):
+        for col, kind in (("model", "TEXT"), ("session_id", "TEXT"), ("cost_cents", "INTEGER")):
             if col not in cols:
-                conn.execute(f"ALTER TABLE analysis_runs ADD COLUMN {col} TEXT")
+                conn.execute(f"ALTER TABLE analysis_runs ADD COLUMN {col} {kind}")
         conn.execute(_MESSAGES_TABLE)
 
 
@@ -583,7 +584,7 @@ def list_reservations(conn: sqlite3.Connection, store_id: str) -> list[dict]:
 # ---- 分析の記録 -------------------------------------------------------------
 
 ANALYSIS_COLUMNS = ("status", "export_csv", "id_map_json", "funnel_json", "tool_log", "report_json",
-                    "model", "session_id")
+                    "model", "session_id", "cost_cents")
 
 
 def create_analysis_run(conn: sqlite3.Connection, analysis_id: str, as_of: str, **fields: str) -> None:
@@ -609,20 +610,22 @@ def update_analysis_run(conn: sqlite3.Connection, analysis_id: str, **fields: st
         )
 
 
-def fail_unfinished_runs(conn: sqlite3.Connection, message: str) -> int:
-    """起動した時に、前回のサーバーで終わらなかった分析を「失敗」にする（実行中のまま残さない）。"""
+def list_unfinished_runs(conn: sqlite3.Connection) -> list[dict]:
+    """前回のサーバーで終わらなかった分析（受付済み・実行中のまま残ったもの）。"""
+    rows = conn.execute(
+        "SELECT * FROM analysis_runs WHERE status IN ('queued', 'running') ORDER BY analysis_id"
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def fail_pending_messages(conn: sqlite3.Connection) -> None:
+    """前回のサーバーで答えの途中だった質問を「失敗」にする（もう一度聞けるように）。"""
     with conn:
-        cur = conn.execute(
-            "UPDATE analysis_runs SET status = 'failed', report_json = ?"
-            " WHERE status IN ('queued', 'running')",
-            (message,),
-        )
         conn.execute(
             "UPDATE analysis_messages SET status = 'failed',"
             " text = 'サーバーが途中で止まったため、答えられませんでした。もう一度聞いてください。'"
             " WHERE status = 'pending'"
         )
-    return cur.rowcount
 
 
 def get_analysis_run(conn: sqlite3.Connection, analysis_id: str) -> dict | None:
@@ -630,6 +633,16 @@ def get_analysis_run(conn: sqlite3.Connection, analysis_id: str) -> dict | None:
         "SELECT * FROM analysis_runs WHERE analysis_id = ?", (analysis_id,)
     ).fetchone()
     return dict(row) if row else None
+
+
+def analysis_cost_summary(conn: sqlite3.Connection, default_model: str) -> list[dict]:
+    """モデルごとの、終わった分析の回数・費用の平均と合計（目安。セント）。続きの質問の分も含む。"""
+    rows = conn.execute(
+        "SELECT COALESCE(model, ?) AS model, COUNT(*) AS runs, ROUND(AVG(cost_cents)) AS avg_cents, SUM(cost_cents) AS total_cents"
+        " FROM analysis_runs WHERE status = 'done' AND cost_cents IS NOT NULL GROUP BY 1 ORDER BY 1",
+        (default_model,),
+    ).fetchall()
+    return [dict(r) for r in rows]
 
 
 def add_analysis_message(conn: sqlite3.Connection, analysis_id: str, at: str, role: str,

@@ -15,6 +15,9 @@ const SUGGEST = [
   "次の一手を店で試すなら、最初の1週間で何をすればいい？",
 ];
 
+/** @param {number} cents */
+const usd = (cents) => `$${(cents / 100).toFixed(2)}`;
+
 /** 最後に描いた中身（変わった時だけ描き直し、読んでいる場所を動かさない） */
 let lastReport = "";
 let lastChat = "";
@@ -81,7 +84,8 @@ async function refresh() {
     timer = setTimeout(refresh, 5000);
     return;
   }
-  byId("meta").textContent = `${run.model_label || run.model}・基準日 ${fmtDay(run.as_of)}`;
+  const cost = run.cost_cents == null ? "" : `・費用の目安 ${usd(run.cost_cents)}（上限 ${usd(run.budget_cents)}）`;
+  byId("meta").textContent = `${run.model_label || run.model}・基準日 ${fmtDay(run.as_of)}${cost}`;
   byId("status").replaceChildren(guide(run));
   const key = JSON.stringify([run.status, run.report, run.error, run.tool_log.length]);
   if (key !== lastReport) {
@@ -109,7 +113,11 @@ form.addEventListener("submit", async (e) => {
   await refresh();
 });
 input.addEventListener("keydown", (e) => {
-  if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) form.requestSubmit();
+  // Enter で送る・Shift+Enter で改行。日本語の変換を確定する Enter では送らない
+  if (e.key === "Enter" && !e.shiftKey && !e.isComposing && e.keyCode !== 229) {
+    e.preventDefault();
+    if (!send.disabled) form.requestSubmit();
+  }
 });
 
 refresh().finally(pageLoading());

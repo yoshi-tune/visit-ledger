@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from datetime import date, datetime
 from pathlib import Path
 
@@ -34,6 +35,9 @@ MODELS = {
     "claude-haiku-5-5": {"label": "Haiku 5.5", "note": "いちばん速く安い（掘り下げは浅くなりやすい）"},
 }
 DEFAULT_MODEL = "claude-opus-5-5"
+
+# 1回の分析（続きの質問を含む）で使ってよい額の上限。セント。環境変数 VL_BUDGET_CENTS で変えられる
+BUDGET_CENTS = int(os.environ.get("VL_BUDGET_CENTS", "300"))
 
 
 def now() -> datetime:
