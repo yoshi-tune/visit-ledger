@@ -1,72 +1,115 @@
 // @ts-check
-// 案内役のキャラクター（スパナの形）。この作品のために描いたもの。
+// 案内役のキャラクター「ナットク」。スパナの形のドット絵（この作品のために描いたもの）。
+// 名前は整備の部品「ナット」と「納得」から。数字の根拠を見せて、店長に納得してもらう役。
 // 表情：normal（ふつう）・happy（にっこり）・think（考え中）・cheer（応援・両手を上げる）
 
+export const NAME = "ナットク";
+
+// 18×28 のドット。o=輪郭 b=体 h=光 （顔・腕は下で重ねる）。丸い頭（口が上に開く）＋長い持ち手
+const BODY = [
+  "..oooo......oooo..",
+  ".obhbbo....obbbbo.",
+  "obhbbbo....obbbbbo",
+  "obhbbbo....obbbbbo",
+  "obbbbbo....obbbbbo",
+  "obbbbbboooobbbbbbo",
+  "obbbbbbbbbbbbbbbbo",
+  "obbbbbbbbbbbbbbbbo",
+  "obbbbbbbbbbbbbbbbo",
+  "obbbbbbbbbbbbbbbbo",
+  ".obbbbbbbbbbbbbbo.",
+  "..obbbbbbbbbbbbo..",
+  "...oobbbbbbbboo...",
+  ".....obbbbbbo.....",
+  ".....obhbbbbo.....",
+  ".....obhbbbbo.....",
+  ".....obhbbbbo.....",
+  ".....obbbbbbo.....",
+  ".....obbbbbbo.....",
+  ".....obbbbbbo.....",
+  ".....obbbbbbo.....",
+  ".....obbbbbbo.....",
+  ".....obbbbbbo.....",
+  ".....obbbbbbo.....",
+  ".....obbbbbbo.....",
+  ".....obbbbbbo.....",
+  "......obbbbo......",
+  ".......oooo.......",
+];
+const W = 18;
+const H = BODY.length;
+
+/** @typedef {[number, number, string][]} Pixels  [x, y, 色の記号] */
+
+/** @type {Record<string, Pixels>} */
 const FACES = {
-  normal: `
-    <circle cx="41" cy="47" r="3.4" fill="var(--mascot-face)"/>
-    <circle cx="59" cy="47" r="3.4" fill="var(--mascot-face)"/>
-    <path d="M44 56 Q50 61 56 56" fill="none" stroke="var(--mascot-face)" stroke-width="2.6" stroke-linecap="round"/>`,
-  happy: `
-    <path d="M37 48 Q41 42 45 48" fill="none" stroke="var(--mascot-face)" stroke-width="2.8" stroke-linecap="round"/>
-    <path d="M55 48 Q59 42 63 48" fill="none" stroke="var(--mascot-face)" stroke-width="2.8" stroke-linecap="round"/>
-    <path d="M42 55 Q50 65 58 55 Z" fill="var(--mascot-face)"/>`,
-  think: `
-    <circle cx="43" cy="46" r="3.2" fill="var(--mascot-face)"/>
-    <circle cx="61" cy="46" r="3.2" fill="var(--mascot-face)"/>
-    <circle cx="52" cy="58" r="2.6" fill="none" stroke="var(--mascot-face)" stroke-width="2.4"/>`,
+  normal: [
+    [4, 6, "e"], [5, 6, "e"], [4, 7, "e"], [5, 7, "e"],
+    [12, 6, "e"], [13, 6, "e"], [12, 7, "e"], [13, 7, "e"],
+    [7, 8, "e"], [10, 8, "e"], [8, 9, "e"], [9, 9, "e"],
+    [2, 8, "c"], [15, 8, "c"],
+  ],
+  happy: [
+    [5, 6, "e"], [4, 7, "e"], [6, 7, "e"],
+    [12, 6, "e"], [11, 7, "e"], [13, 7, "e"],
+    [7, 8, "e"], [8, 8, "e"], [9, 8, "e"], [10, 8, "e"], [8, 9, "m"], [9, 9, "m"],
+    [2, 8, "c"], [15, 8, "c"],
+  ],
+  think: [
+    [5, 6, "e"], [6, 6, "e"], [5, 7, "e"], [6, 7, "e"],
+    [13, 6, "e"], [14, 6, "e"], [13, 7, "e"], [14, 7, "e"],
+    [10, 9, "e"], [11, 9, "e"],
+    [2, 8, "c"], [15, 8, "c"],
+  ],
 };
 
+/** @type {Record<string, Pixels>} */
 const ARMS = {
-  down: `
-    <path d="M39 84 Q30 92 31 101" fill="none" stroke="var(--ink)" stroke-width="3" stroke-linecap="round"/>
-    <path d="M61 84 Q70 92 69 101" fill="none" stroke="var(--ink)" stroke-width="3" stroke-linecap="round"/>`,
-  up: `
-    <path d="M39 84 Q20 80 11 62" fill="none" stroke="var(--ink)" stroke-width="3" stroke-linecap="round"/>
-    <path d="M61 84 Q80 80 89 62" fill="none" stroke="var(--ink)" stroke-width="3" stroke-linecap="round"/>
-    <circle cx="11" cy="60" r="3.2" fill="var(--mascot)" stroke="var(--ink)" stroke-width="2"/>
-    <circle cx="89" cy="60" r="3.2" fill="var(--mascot)" stroke="var(--ink)" stroke-width="2"/>`,
-  chin: `
-    <path d="M39 84 Q30 92 31 101" fill="none" stroke="var(--ink)" stroke-width="3" stroke-linecap="round"/>
-    <path d="M61 86 Q78 84 74 72" fill="none" stroke="var(--ink)" stroke-width="3" stroke-linecap="round"/>`,
+  down: [[4, 15, "o"], [3, 16, "o"], [2, 17, "o"], [13, 15, "o"], [14, 16, "o"], [15, 17, "o"]],
+  up: [[4, 15, "o"], [3, 14, "o"], [2, 13, "o"], [1, 12, "o"], [13, 15, "o"], [14, 14, "o"], [15, 13, "o"], [16, 12, "o"]],
+  chin: [[4, 15, "o"], [3, 16, "o"], [2, 17, "o"], [13, 15, "o"], [14, 14, "o"], [14, 13, "o"]],
+};
+
+const COLORS = {
+  o: "var(--px-line)",
+  b: "var(--px-body)",
+  h: "var(--px-light)",
+  e: "var(--px-face)",
+  m: "var(--px-mouth)",
+  c: "var(--px-cheek)",
 };
 
 /**
- * キャラクターの SVG を作る。
+ * キャラクターの SVG を作る（ドットは横に続く同じ色をまとめて描く）。
  * @param {"normal" | "happy" | "think" | "cheer"} [mood]
  * @param {number} [size] 高さ（px）
  */
 export function mascot(mood = "normal", size = 72) {
-  const face = mood === "cheer" ? FACES.happy : FACES[mood];
-  const arms = mood === "cheer" ? ARMS.up : mood === "think" ? ARMS.chin : ARMS.down;
-  const id = `m${Math.random().toString(36).slice(2, 8)}`;
+  const grid = BODY.map((row) => row.split(""));
+  const face = FACES[mood === "cheer" ? "happy" : mood];
+  const arms = ARMS[mood === "cheer" ? "up" : mood === "think" ? "chin" : "down"];
+  for (const [x, y, c] of [...arms, ...face]) grid[y][x] = c;
+
+  let rects = "";
+  grid.forEach((row, y) => {
+    let x = 0;
+    while (x < row.length) {
+      const c = row[x];
+      let w = 1;
+      while (x + w < row.length && row[x + w] === c) w++;
+      if (c !== ".") rects += `<rect x="${x}" y="${y}" width="${w}" height="1" fill="${COLORS[/** @type {keyof typeof COLORS} */ (c)]}"/>`;
+      x += w;
+    }
+  });
   const wrap = document.createElement("span");
   wrap.className = `mascot mood-${mood}`;
   wrap.setAttribute("aria-hidden", "true");
-  wrap.innerHTML = `
-  <svg viewBox="0 0 100 130" width="${Math.round(size * 100 / 130)}" height="${size}">
-    <defs>
-      <mask id="${id}">
-        <rect width="100" height="130" fill="#fff"/>
-        <path d="M38 0 H62 V19 Q62 28 50 28 Q38 28 38 19 Z" fill="#000"/>
-      </mask>
-    </defs>
-    ${arms}
-    <rect x="38" y="66" width="24" height="56" rx="12" fill="var(--mascot)" stroke="var(--ink)" stroke-width="3"/>
-    <circle cx="50" cy="114" r="4" fill="none" stroke="var(--ink)" stroke-width="2" opacity="0.5"/>
-    <g mask="url(#${id})">
-      <circle cx="50" cy="46" r="32" fill="var(--mascot)" stroke="var(--ink)" stroke-width="3"/>
-    </g>
-    <path d="M38 16.7 V19 Q38 28 50 28 Q62 28 62 19 V16.7" fill="none" stroke="var(--ink)" stroke-width="3" stroke-linejoin="round"/>
-    <circle cx="35" cy="57" r="4.5" fill="var(--series-flyer)" opacity="0.45"/>
-    <circle cx="65" cy="57" r="4.5" fill="var(--series-flyer)" opacity="0.45"/>
-    ${face}
-  </svg>`;
+  wrap.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="${Math.round(size * W / H)}" height="${size}" shape-rendering="crispEdges">${rects}</svg>`;
   return wrap;
 }
 
 /**
- * キャラクターと吹き出し。
+ * キャラクターと吹き出し（吹き出しの上に名前の札）。
  * @param {string | Node} text
  * @param {"normal" | "happy" | "think" | "cheer"} [mood]
  * @param {{size?: number, cls?: string}} [opt]
@@ -76,7 +119,10 @@ export function say(text, mood = "normal", opt = {}) {
   box.className = `say ${opt.cls || ""}`.trim();
   const bubble = document.createElement("div");
   bubble.className = "bubble";
-  bubble.append(text);
+  const who = document.createElement("b");
+  who.className = "who";
+  who.textContent = NAME;
+  bubble.append(who, text);
   box.append(mascot(mood, opt.size || 72), bubble);
   return box;
 }

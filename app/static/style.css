@@ -23,8 +23,13 @@
   --bad-soft: #f8e1e1;
   --radius: 14px;
   --shadow: 0 1px 2px rgba(31, 30, 29, 0.06), 0 4px 16px rgba(31, 30, 29, 0.05);
-  --mascot: #b9c2d0;
-  --mascot-face: #2a2927;  /* 顔はいつも濃い色（暗い表示でも読めるように） */
+  /* ナットク（ドット絵）の色。暗い表示でも同じ色で描く */
+  --px-line: #3b2620;
+  --px-body: #d97757;
+  --px-light: #f2ab8c;
+  --px-face: #2a1a14;
+  --px-mouth: #8f2f1c;
+  --px-cheek: #f5c4ae;
   --font: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Meiryo", system-ui, sans-serif;
 }
 
@@ -50,7 +55,6 @@
     --bad: #ef8a8a;
     --bad-soft: #3d2324;
     --shadow: none;
-    --mascot: #8f9aac;
   }
 }
 
@@ -275,7 +279,7 @@ details > summary { cursor: pointer; font-weight: 700; color: var(--ink-2); padd
 
 /* ---- 案内役のキャラクターと吹き出し ---- */
 .mascot { display: inline-block; flex: 0 0 auto; line-height: 0; }
-.mascot svg { display: block; overflow: visible; }
+.mascot svg { display: block; overflow: visible; image-rendering: pixelated; }
 .mood-cheer svg, .mood-happy svg { animation: hop 0.6s ease-out 1; }
 .mood-think svg { animation: sway 2.4s ease-in-out infinite; transform-origin: 50% 90%; }
 @keyframes hop { 0% { transform: translateY(0); } 40% { transform: translateY(-6px); } 100% { transform: translateY(0); } }
@@ -296,3 +300,9 @@ details > summary { cursor: pointer; font-weight: 700; color: var(--ink-2); padd
 .say.center .bubble::before { left: 50%; top: -8px; bottom: auto; margin-left: -7px; transform: rotate(135deg); }
 .toast .mascot { vertical-align: middle; margin-right: 6px; }
 .toast { display: flex; align-items: center; gap: 4px; }
+
+.say .bubble .who { display: block; font-size: 0.75rem; color: var(--accent); letter-spacing: 0.05em; margin-bottom: 2px; }
+.mood-cheer svg, .mood-happy svg { animation: hop-px 0.6s steps(3) 1; }
+.mood-think svg { animation: sway-px 2s steps(2) infinite; }
+@keyframes hop-px { 0% { transform: translateY(0); } 50% { transform: translateY(-4px); } 100% { transform: translateY(0); } }
+@keyframes sway-px { 0%, 100% { transform: translateX(0); } 50% { transform: translateX(2px); } }
