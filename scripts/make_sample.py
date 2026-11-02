@@ -27,11 +27,10 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from app import ledger  # noqa: E402
+from app.config import DB_PATH, PERIOD_FROM, PERIOD_TO, STORE_ID, TODAY  # noqa: E402
 
 SEED = 20261102
-TODAY = date(2026, 11, 7)  # アプリの「今日」（DESIGN §2）
-PERIOD_FROM, PERIOD_TO = date(2026, 10, 1), date(2026, 10, 31)
-STORE_ID, STORE_NAME = "S-EKI", "駅前店"
+STORE_NAME = "駅前店"
 CAMPAIGN = "autumn_check_202610"
 STAFF = ("A", "B")
 
@@ -289,7 +288,7 @@ def build(out: Path, plant: bool) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--out", type=Path, default=ROOT / "data" / "ledger.db")
+    parser.add_argument("--out", type=Path, default=DB_PATH)
     parser.add_argument("--no-plant", action="store_true", help="仕込みなしの台帳を作る")
     args = parser.parse_args()
     build(args.out, plant=not args.no_plant)

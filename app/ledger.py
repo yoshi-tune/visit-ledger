@@ -317,3 +317,127 @@ def _log_change(
         " handled_by) VALUES (?, ?, ?, ?, ?, ?)",
         (reserve_no, at, from_status, to_status, confirmed_for, handled_by),
     )
+
+
+# ---- 読み出し ---------------------------------------------------------------
+
+def _rows(conn: sqlite3.Connection, sql: str, params: tuple = ()) -> list[dict]:
+    return [dict(r) for r in conn.execute(sql, params).fetchall()]
+
+
+def snapshot(conn: sqlite3.Connection, store_id: str, period_from: str, period_to: str) -> dict:
+    """集計と書き出しに使う台帳の写しを、1回の読み取り（1つのトランザクション）で取る。
+
+    対象は施策期間に始まった LP のセッションと、そこから生まれた予約・来店・履歴。
+    period_from / period_to は "YYYY-MM-DD"（両端を含む）。
+    """
+    session_filter = (
+        "SELECT session_id FROM sessions WHERE store_id = ?"
+        " AND date(started_at) BETWEEN ? AND ?"
+    )
+    p = (store_id, period_from, period_to)
+    conn.execute("BEGIN")
+    try:
+        data = {
+            "campaigns": _rows(
+                conn, "SELECT * FROM campaigns WHERE store_id = ? ORDER BY campaign, src", (store_id,)
+            ),
+            "sessions": _rows(
+                conn,
+                "SELECT * FROM sessions WHERE store_id = ? AND date(started_at) BETWEEN ? AND ?"
+                " ORDER BY started_at, session_id",
+                p,
+            ),
+            "events": _rows(
+                conn,
+                f"SELECT * FROM events WHERE session_id IN ({session_filter}) ORDER BY at, id",
+                p,
+            ),
+            "reservations": _rows(
+                conn,
+                f"SELECT * FROM reservations WHERE session_id IN ({session_filter})"
+                " ORDER BY created_at, reserve_no",
+                p,
+            ),
+            "visits": _rows(
+                conn,
+                "SELECT v.* FROM visits v JOIN reservations r USING (reserve_no)"
+                f" WHERE r.session_id IN ({session_filter}) ORDER BY v.visited_at, v.reserve_no",
+                p,
+            ),
+            "reservation_changes": _rows(
+                conn,
+                "SELECT c.* FROM reservation_changes c JOIN reservations r USING (reserve_no)"
+                f" WHERE r.session_id IN ({session_filter}) ORDER BY c.at, c.id",
+                p,
+            ),
+        }
+    finally:
+        conn.execute("COMMIT")
+    return data
+
+
+def get_store(conn: sqlite3.Connection, store_id: str) -> dict | None:
+    row = conn.execute("SELECT * FROM stores WHERE store_id = ?", (store_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def get_session(conn: sqlite3.Connection, session_id: str) -> dict | None:
+    row = conn.execute("SELECT * FROM sessions WHERE session_id = ?", (session_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def get_reservation(conn: sqlite3.Connection, reserve_no: str) -> dict | None:
+    row = conn.execute(
+        "SELECT r.*, v.visited_at, v.recorded_at FROM reservations r"
+        " LEFT JOIN visits v USING (reserve_no) WHERE r.reserve_no = ?",
+        (reserve_no,),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def list_reservations(conn: sqlite3.Connection, store_id: str) -> list[dict]:
+    """受付の画面用。名前での絞り込みは画面の側で行う（名前を URL やログに出さないため）。"""
+    return _rows(
+        conn,
+        "SELECT r.reserve_no, r.menu, r.requested_for, r.confirmed_for, r.status, r.handled_by,"
+        " r.created_at, r.src, r.customer_name, r.customer_phone, v.visited_at, v.recorded_at"
+        " FROM reservations r LEFT JOIN visits v USING (reserve_no)"
+        " WHERE r.store_id = ? ORDER BY COALESCE(r.confirmed_for, r.requested_for), r.reserve_no",
+        (store_id,),
+    )
+
+
+# ---- 分析の記録 -------------------------------------------------------------
+
+ANALYSIS_COLUMNS = ("status", "export_csv", "id_map_json", "funnel_json", "tool_log", "report_json")
+
+
+def create_analysis_run(conn: sqlite3.Connection, analysis_id: str, as_of: str, **fields: str) -> None:
+    unknown = set(fields) - set(ANALYSIS_COLUMNS)
+    if unknown:
+        raise LedgerError(f"analysis_runs に無い列です: {sorted(unknown)}")
+    cols = ["analysis_id", "as_of", *fields]
+    with conn:
+        conn.execute(
+            f"INSERT INTO analysis_runs ({', '.join(cols)}) VALUES ({', '.join('?' * len(cols))})",
+            (analysis_id, as_of, *fields.values()),
+        )
+
+
+def update_analysis_run(conn: sqlite3.Connection, analysis_id: str, **fields: str) -> None:
+    unknown = set(fields) - set(ANALYSIS_COLUMNS)
+    if unknown or not fields:
+        raise LedgerError(f"analysis_runs に無い列です: {sorted(unknown)}")
+    with conn:
+        conn.execute(
+            f"UPDATE analysis_runs SET {', '.join(f'{k} = ?' for k in fields)} WHERE analysis_id = ?",
+            (*fields.values(), analysis_id),
+        )
+
+
+def get_analysis_run(conn: sqlite3.Connection, analysis_id: str) -> dict | None:
+    row = conn.execute(
+        "SELECT * FROM analysis_runs WHERE analysis_id = ?", (analysis_id,)
+    ).fetchone()
+    return dict(row) if row else None
