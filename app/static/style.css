@@ -178,7 +178,7 @@ a { color: var(--accent); }
 .tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
 .count { display: inline-block; min-width: 24px; padding: 0 7px; border-radius: 999px; background: var(--surface-2); font-size: 0.8125rem; margin-left: 4px; }
 .count.hot { background: var(--accent); color: var(--accent-ink); }
-.cards { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); }
+.cards { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); align-items: start; }
 .card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; box-shadow: var(--shadow); }
 .card h2 { font-size: 1.0625rem; margin-bottom: 8px; }
 .rcard { display: flex; flex-direction: column; gap: 10px; }
@@ -266,3 +266,6 @@ details > summary { cursor: pointer; font-weight: 700; color: var(--ink-2); padd
 .day-list .choice .title { font-size: 1.125rem; }
 .day-list .choice.sat .desc { color: var(--series-line); }
 .day-list .choice.sun .desc { color: var(--bad); }
+/* カードの中の日時の選び欄は、カードの幅に収めて日にちの列だけ横に送る */
+.cards > *, .rcard .picker, .rcard .picker > *, .picker-inner { min-width: 0; }
+.picker-inner { display: grid; gap: 10px; }

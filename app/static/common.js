@@ -134,10 +134,10 @@ export function dateTimePicker(opt) {
     slots.append(b);
   }
   wrap.append(days, slots);
-  // 選んである日にちが見えるように横に送る
+  // 選んである日にちが見えるように、日にちの列だけを横に送る（画面全体は動かさない）
   requestAnimationFrame(() => {
-    const on = days.querySelector('[aria-pressed="true"]');
-    if (on) /** @type {HTMLElement} */ (on).scrollIntoView({ inline: "center", block: "nearest" });
+    const on = /** @type {HTMLElement | null} */ (days.querySelector('[aria-pressed="true"]'));
+    if (on) days.scrollLeft = on.offsetLeft - days.offsetLeft - (days.clientWidth - on.offsetWidth) / 2;
   });
   return wrap;
 }
