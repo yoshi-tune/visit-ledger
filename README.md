@@ -10,24 +10,33 @@
 
 ### 手元で起動する
 
-必要なもの：[uv](https://docs.astral.sh/uv/)（Python は uv が用意します）
+必要なもの：[uv](https://docs.astral.sh/uv/)（Python は uv が用意します）。Windows・Mac・Linux で同じ手順です。
 
-```powershell
+```sh
 git clone https://github.com/yoshi-tune/visit-ledger.git
 cd visit-ledger
-uv run python scripts/make_sample.py     # 見本の台帳 data/ledger.db を作る（何度回しても同じ中身）
 uv run uvicorn app.main:app              # http://127.0.0.1:8000/ を開く
 ```
 
-Claude の分析も試す場合（任意）：
+初めての起動で、見本の台帳 `data/ledger.db` を自動で作ります（乱数の種を固定しているので、誰が作っても同じ中身）。台帳を作り直す時は `uv run python scripts/make_sample.py` を回してください。
+
+**鍵が無くても最後まで試せます。** 効果の画面で「分析を頼む」を押すと、見本の台帳で Claude（Opus 5.5）が実際に分析した時の報告を「見本の報告」として出します（Claude は呼びません。続けての質問はできません）。デモ動画の分析は、鍵を入れた本物の分析です。
+
+本物の分析も試す場合（任意。1回 $1 前後かかります）：
 
 ```powershell
+# Windows（PowerShell）
 $env:ANTHROPIC_API_KEY = "<あなたの鍵>"
 uv run python scripts/setup_agent.py     # 分析エージェントを1回だけ作る（ID は data/agent_ids.json に入る）
 uv run uvicorn app.main:app
 ```
 
-鍵が無くても、分析以外はすべて動きます（分析を頼むと「鍵が設定されていません」と出ます）。
+```sh
+# Mac・Linux
+export ANTHROPIC_API_KEY="<あなたの鍵>"
+uv run python scripts/setup_agent.py
+uv run uvicorn app.main:app
+```
 
 効果の画面と分析の画面に出る費用は、定価で数えた目安です（正しい額は Claude Console で確かめてください）。`make_sample.py` で台帳を作り直すと、分析の記録と費用の合計も消えます。1回の上限は環境変数 `VL_BUDGET_CENTS`（セント・既定 300）で変えられます。
 

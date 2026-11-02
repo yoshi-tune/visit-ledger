@@ -22,6 +22,8 @@ from app import config, export, ledger
 REPORT_SCHEMA = json.loads((config.ROOT / "agent" / "report_schema.json").read_text(encoding="utf-8"))
 # 基準（rubric）の件数の上限。超えても失敗にはせず、記録に注意として残す（採点が先に見ている）
 LIMITS = {"observations": 8, "hypotheses": 3, "to_check": 4, "steps": 4}
+# 鍵が無い時に見せる見本の報告（作ったばかりの見本の台帳で、エージェントを実際に回した結果をそのまま保存したもの）
+SAMPLE_RUN = config.ROOT / "agent" / "sample_run.json"
 
 
 class RunError(Exception):
@@ -31,6 +33,20 @@ class RunError(Exception):
 def start(conn, snapshot: dict, funnel: dict, model: str = config.DEFAULT_MODEL) -> dict:
     files, id_map = export.build(snapshot)
     analysis_id = f"an_{uuid.uuid4().hex[:12]}"
+    if not os.environ.get("ANTHROPIC_API_KEY") and SAMPLE_RUN.exists():
+        # 鍵が無い時（リポジトリから試す人）：見本の台帳で実際に回した分析の結果を見せる。Claude は呼ばない
+        sample = json.loads(SAMPLE_RUN.read_text(encoding="utf-8"))
+        ledger.create_analysis_run(
+            conn, analysis_id, sample["as_of"],
+            status="done",
+            export_csv=json.dumps(files, ensure_ascii=False),
+            id_map_json=json.dumps(id_map),
+            funnel_json=json.dumps(sample["funnel"], ensure_ascii=False),
+            tool_log=json.dumps(sample["tool_log"], ensure_ascii=False),
+            model=sample["model"],
+            report_json=json.dumps({**sample["report"], "mode": "sample"}, ensure_ascii=False),
+        )
+        return {"analysis_id": analysis_id, "status": "done"}
     ledger.create_analysis_run(
         conn, analysis_id, funnel["as_of"],
         status="queued",

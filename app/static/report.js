@@ -19,6 +19,11 @@ export function renderReport(run) {
   if (run.error) out.push(el("div", { class: "error-box" }, [run.error]));
   const r = run.report;
   if (r) {
+    if (r.mode === "sample") {
+      out.push(el("p", { class: "banner" }, [
+        `見本の報告です。鍵が設定されていないため、作ったばかりの見本の台帳で Claude（${run.model_label || run.model}）が実際に分析した結果を出しています。画面で来店などを記録した後は、効果の画面の数字と合いません。`,
+      ]));
+    }
     if (r.mode === "messages") {
       out.push(el("p", { class: "banner" }, ["予備の形（1回の呼び出し）で書いた報告です。コードでの追加の集計はしていません。"]));
     }
@@ -96,6 +101,9 @@ export function guide(run) {
       `Claude が台帳を調べています…${tools ? `（集計の実行 ${tools}回）` : ""}`,
     ]);
     return say(text, "work");
+  }
+  if (run.status === "done" && run.report && run.report.mode === "sample") {
+    return say("鍵が無いので、前に見本の台帳で調べた報告を出しています。本物の分析は、鍵を設定すると頼めます。", "think");
   }
   if (run.status === "done" && run.report) {
     // 項目が無い前の報告だけ、文字の比較で代わりにする
