@@ -29,7 +29,8 @@ DESCRIPTION = (
 
 def run(analysis_id: str, files: dict[str, str], funnel: dict,
         on_log: Callable[[dict], None], model: str = config.DEFAULT_MODEL,
-        previous: dict | None = None) -> dict:
+        previous: dict | None = None, system: str | None = None) -> dict:
+    """system を渡すと、このセッションだけ指示文を差し替える（改善の試し。本番のエージェントの版は変えない）。"""
     if not IDS.exists():
         raise RunError("分析エージェントの準備がまだです。`uv run python scripts/setup_agent.py` を先に回してください。")
     ids = json.loads(IDS.read_text(encoding="utf-8"))
@@ -49,10 +50,13 @@ def run(analysis_id: str, files: dict[str, str], funnel: dict,
         f = client.files.upload(file=(name, text.encode("utf-8"), mime))
         resources.append({"type": "file", "file_id": f.id, "mount_path": f"{MOUNT}/{name}"})
 
+    agent = {"type": "agent_with_overrides", "id": ids["agent_id"], "version": ids["agent_version"],
+             "model": model}
+    if system is not None:
+        agent["system"] = system
     session = client.beta.sessions.create(
         # 店長が選んだモデルで、このセッションだけ動かす（エージェントの版は変えない）
-        agent={"type": "agent_with_overrides", "id": ids["agent_id"], "version": ids["agent_version"],
-               "model": model},
+        agent=agent,
         environment_id=ids["environment_id"],
         title=f"visit-ledger {analysis_id}",
         resources=resources,

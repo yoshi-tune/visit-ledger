@@ -132,6 +132,11 @@ def desk_coupon_page(code: str | None = None) -> FileResponse:
     return page("desk_coupon.html")
 
 
+@app.get("/improve", include_in_schema=False)
+def improve_page() -> FileResponse:
+    return page("improve.html")
+
+
 @app.get("/settings", include_in_schema=False)
 def settings_page() -> FileResponse:
     return page("settings.html")
@@ -295,6 +300,59 @@ def redeem_coupon(code: str, body: StaffIn, conn: sqlite3.Connection = Depends(g
     c = _coupon_or_404(conn, code)
     reserve_no = guard(ledger.redeem_coupon, conn, c["code"], fmt(config.now()), body.staff)
     return {"ok": True, "reserve_no": reserve_no}
+
+
+# ---- API：分析担当の改善 ----------------------------------------------------------
+
+def _improvement_view(row: dict) -> dict:
+    """画面に出す形。報告の全文と指示文の全文は返さない（図・説明・本当の差分・物差しの数字だけ）。"""
+    def ev(raw: str | None) -> dict | None:
+        if not raw:
+            return None
+        e = json.loads(raw)
+        one = lambda r: {k: r.get(k) for k in ("schema_ok", "matches", "rounds", "cost_cents", "tool_calls", "judge", "reused", "error")}
+        return {"plant": one(e["plant"]), "noplant": one(e["noplant"]), "total_rounds": e["total_rounds"],
+                "total_cost_cents": e["total_cost_cents"], "all_judge_ok": e["all_judge_ok"], "all_schema_ok": e["all_schema_ok"]}
+    proposal = json.loads(row["proposal_json"]) if row["proposal_json"] else {}
+    return {
+        "id": row["id"], "created_at": row["created_at"], "iteration": row["iteration"], "status": row["status"],
+        "decision": row["decision"], "reason": row["reason"], "applied_at": row["applied_at"],
+        "explain": proposal.get("explain"), "eli5": proposal.get("eli5"),
+        "eval_base": ev(row["eval_base_json"]), "eval_cand": ev(row["eval_cand_json"]),
+    }
+
+
+@app.get("/api/improvements")
+def list_improvements(conn: sqlite3.Connection = Depends(get_conn)) -> dict:
+    return {"items": [_improvement_view(r) for r in ledger.list_improvements(conn)]}
+
+
+@app.post("/api/improvements/{improvement_id}/apply")
+def apply_improvement(improvement_id: int, conn: sqlite3.Connection = Depends(get_conn)) -> dict:
+    """残した版を本番に使う（人が押した時だけ）。指示文のファイルを書き換え、エージェントの版を上げる。鍵が要る。"""
+    from app import improve
+
+    row = ledger.get_improvement(conn, improvement_id)
+    if not row or row["decision"] != "kept":
+        raise HTTPException(400, "物差しで残した版だけ本番に使えます")
+    if row["applied_at"]:
+        raise HTTPException(400, "この版はもう本番に使っています")
+    current = improve.SYSTEM_PATH.read_text(encoding="utf-8")
+    if current.replace("\r\n", "\n").strip() != row["base_system"].replace("\r\n", "\n").strip():
+        raise HTTPException(409, "今の指示文が、この案を作った時と違います（別の直しが入った後です）。もう一度改善を回してください")
+    improve.SYSTEM_PATH.write_text(row["candidate_system"], encoding="utf-8")
+    try:
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location("setup_agent", config.ROOT / "scripts" / "setup_agent.py")
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        mod.main()
+    except Exception as e:  # エージェントを更新できなければ、指示文も元に戻す
+        improve.SYSTEM_PATH.write_text(current, encoding="utf-8")
+        raise HTTPException(500, f"エージェントを更新できませんでした（指示文は元に戻しました）: {e}") from e
+    ledger.update_improvement(conn, improvement_id, applied_at=fmt(config.now()))
+    return {"ok": True}
 
 
 # ---- API：予約 -----------------------------------------------------------------

@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ナットクの改善</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="app-header">
+    <div class="brand">ナットクの改善<small id="store"></small></div>
+    <nav class="app-nav"><a href="/desk">受付</a><a href="/desk/coupon">クーポン</a><a href="/dashboard">効果</a><a href="/settings">店の設定</a><a href="/improve" aria-current="page">改善</a></nav>
+  </header>
+  <main class="app-main">
+    <section class="improve-intro">
+      <h1>分析担当が、自分の手順書を直す</h1>
+      <p class="muted">答えの分かっている2つの見本の台帳（仕込みあり・なし）で分析担当を回し、採点で直しを求められた所を、別の Claude が手順書（指示文）の直しとして出します。直した手順書でもう一度回し、良くなった時だけ残します。本番に使うかは人が決めます。</p>
+      <ul class="improve-rules">
+        <li>🔒 「数え方」「言わないこと」「報告の形」は直せません（アプリの数字と合わせる所・言い過ぎを防ぐ所・報告の約束は、人が決める）</li>
+        <li>📏 採点の基準と物差しも、直す役からは変えられません（採点を甘くして「良くなった」ことにできないように）</li>
+        <li>👀 直す所はすべて図と本当の差分で見せます。説明の無い変更があれば印を付けます</li>
+      </ul>
+    </section>
+    <div id="guide"></div>
+    <div id="list"></div>
+    <p id="error" class="input-error"></p>
+  </main>
+  <script type="module" src="/static/improve.js"></script>
+</body>
+</html>

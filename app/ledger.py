@@ -165,6 +165,25 @@ CREATE TABLE IF NOT EXISTS coupon_redemptions (
 """
 SCHEMA += _COUPON_TABLES
 
+# 分析担当の改善（指示文の直しの案・物差しの結果・残したか戻したか・本番に使ったか）。前の形の台帳にも足せるよう IF NOT EXISTS
+_IMPROVEMENT_TABLE = """
+CREATE TABLE IF NOT EXISTS improvements (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at       TEXT NOT NULL,
+    iteration        INTEGER NOT NULL,
+    status           TEXT NOT NULL CHECK (status IN ('running', 'done', 'failed')),
+    decision         TEXT CHECK (decision IN ('kept', 'reverted', 'rejected')),
+    reason           TEXT,
+    base_system      TEXT NOT NULL,
+    candidate_system TEXT,
+    proposal_json    TEXT,
+    eval_base_json   TEXT,
+    eval_cand_json   TEXT,
+    applied_at       TEXT
+);
+"""
+SCHEMA += _IMPROVEMENT_TABLE
+
 
 class LedgerError(Exception):
     """台帳の決まりに合わない操作（存在しない予約、許されない状態の移り変わり、満席など）。"""
@@ -192,6 +211,7 @@ def upgrade_schema(conn: sqlite3.Connection) -> None:
                 conn.execute(f"ALTER TABLE analysis_runs ADD COLUMN {col} {kind}")
         conn.execute(_MESSAGES_TABLE)
         conn.executescript(_COUPON_TABLES)
+        conn.executescript(_IMPROVEMENT_TABLE)
 
 
 # ---- 店と施策 -------------------------------------------------------------
@@ -718,6 +738,41 @@ def fail_pending_messages(conn: sqlite3.Connection) -> None:
             " text = 'サーバーが途中で止まったため、答えられませんでした。もう一度聞いてください。'"
             " WHERE status = 'pending'"
         )
+
+
+IMPROVEMENT_COLUMNS = ("status", "decision", "reason", "candidate_system", "proposal_json",
+                       "eval_base_json", "eval_cand_json", "applied_at")
+
+
+def add_improvement(conn: sqlite3.Connection, created_at: str, iteration: int, base_system: str,
+                    eval_base_json: str) -> int:
+    with conn:
+        cur = conn.execute(
+            "INSERT INTO improvements (created_at, iteration, status, base_system, eval_base_json)"
+            " VALUES (?, ?, 'running', ?, ?)",
+            (created_at, iteration, base_system, eval_base_json),
+        )
+    return int(cur.lastrowid)
+
+
+def update_improvement(conn: sqlite3.Connection, improvement_id: int, **fields: str) -> None:
+    unknown = set(fields) - set(IMPROVEMENT_COLUMNS)
+    if unknown or not fields:
+        raise LedgerError(f"improvements に無い列です: {sorted(unknown)}")
+    with conn:
+        conn.execute(
+            f"UPDATE improvements SET {', '.join(f'{k} = ?' for k in fields)} WHERE id = ?",
+            (*fields.values(), improvement_id),
+        )
+
+
+def list_improvements(conn: sqlite3.Connection) -> list[dict]:
+    return _rows(conn, "SELECT * FROM improvements ORDER BY id DESC")
+
+
+def get_improvement(conn: sqlite3.Connection, improvement_id: int) -> dict | None:
+    row = conn.execute("SELECT * FROM improvements WHERE id = ?", (improvement_id,)).fetchone()
+    return dict(row) if row else None
 
 
 def latest_reviewable_run(conn: sqlite3.Connection) -> dict | None:
