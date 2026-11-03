@@ -317,7 +317,7 @@ def _improvement_view(row: dict) -> dict:
     return {
         "id": row["id"], "created_at": row["created_at"], "iteration": row["iteration"], "status": row["status"],
         "decision": row["decision"], "reason": row["reason"], "applied_at": row["applied_at"],
-        "explain": proposal.get("explain"), "eli5": proposal.get("eli5"),
+        "explain": proposal.get("explain"), "eli5": proposal.get("eli5"), "plain": proposal.get("plain"),
         "eval_base": ev(row["eval_base_json"]), "eval_cand": ev(row["eval_cand_json"]),
     }
 

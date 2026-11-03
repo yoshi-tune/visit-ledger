@@ -452,3 +452,20 @@ details > summary { cursor: pointer; font-weight: 700; color: var(--ink-2); padd
 .diff-line { white-space: pre-wrap; padding: 2px 6px; border-radius: 4px; }
 .diff-line.add { background: var(--good-soft); color: var(--good); }
 .diff-line.del { background: var(--bad-soft); color: var(--bad); text-decoration: line-through; }
+
+/* ナットクの改善：届く報告の前と後 */
+.improve-card details.fold { border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; background: var(--surface); margin-top: 16px; }
+.improve-card details.fold > summary { cursor: pointer; font-weight: 700; font-size: 0.9375rem; }
+.improve-card details.fold .fold-body { margin-top: 10px; }
+.decision-plain { font-weight: 700; }
+.report-changes { display: grid; gap: 14px; }
+.rc-pair { display: grid; grid-template-columns: 1fr auto 1fr; gap: 10px; align-items: stretch; margin-top: 6px; }
+.rc-box { border-radius: 10px; padding: 10px 12px; background: var(--surface-2); line-height: 1.7; }
+.rc-box.after { border: 2px solid var(--accent); }
+.rc-tag { font-size: 0.8125rem; font-weight: 700; color: var(--muted, inherit); margin-bottom: 4px; }
+.rc-arrow { align-self: center; font-size: 1.25rem; }
+.rc-plain { margin: 6px 0 0; }
+@media (max-width: 640px) {
+  .rc-pair { grid-template-columns: 1fr; }
+  .rc-arrow { transform: rotate(90deg); justify-self: center; }
+}

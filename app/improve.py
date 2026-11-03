@@ -252,6 +252,7 @@ IMPROVER_SYSTEM = f"""あなたは、地域の店の分析担当（別の Claude
 - 直すのは少しだけ（1〜3か所）。理由の無い言い換えはしない。前の回の結果（戻された理由）があれば、それを踏まえる
 - 直した節は全文を返す（見出しの行を含む）。changes には直した節ごとに1件、店長が読んで分かる言葉で書く
 - eli5 は、店長に向けて「分析担当の手順書のどのページを、なぜ書き直すか」をたとえで1〜2文
+- eli5・summary・why・field_effect は店長が読む。英字の言葉（ファイル名・欄の名前・step_01・スクリプトなど）を使わず、「報告の◯◯の欄」「集計」のように言う
 """
 
 
@@ -312,3 +313,121 @@ def explain(system: str, candidate: str, proposal: dict) -> dict:
         "unexplained": sorted(changed - stated),  # 差分はあるのに説明が無い節
         "claimed_not_changed": sorted(stated - changed),  # 説明はあるのに差分が無い節
     }
+
+
+# ---- 現場の言葉で言い直す ----------------------------------------------------------
+# 直す役の説明は手順書の話になりやすい。現場の人が知りたいのは「届く報告がどう変わるか」なので、
+# 前の版と直した版が同じ見本の台帳で実際に書いた報告から、変わった所を抜き出して並べる。
+# 抜き出した文が本当にその報告にあるかはコードで確かめる（無ければ捨てる）。
+
+PLAIN_MODEL = JUDGE_MODEL
+REPORT_PARTS = {
+    "reconciliation": "数え直しの結果", "first_view": "最初の見立て", "steps": "調べた順番",
+    "revised_view": "調べた後の見立て", "observations": "分かったこと", "hypotheses": "考えられる理由",
+    "to_check": "店で確かめること", "next_action": "次の一手",
+}
+LEDGER_LABEL = {"plant": "見本の台帳A（チラシが低く見える仕掛けあり）", "noplant": "見本の台帳B（媒体の差が無い）"}
+# 現場向けの文に混ざってはいけない言葉（ファイル名・欄の英字名など）
+JARGON = re.compile(r"[A-Za-z_][A-Za-z0-9_.]{2,}")
+FIELD_WORDS = {"LINE", "QR", "Web", "AI"}  # 現場でも使う言葉
+
+PLAIN_SCHEMA = {
+    "type": "object", "additionalProperties": False, "required": ["headline", "decision_plain", "report_changes"],
+    "properties": {
+        "headline": {"type": "string", "description": "店長に向けて、この直しで届く報告がどう変わるか（1文）"},
+        "decision_plain": {"type": "string", "description": "残した／戻した理由を店長の言葉で（1〜2文）"},
+        "report_changes": {"type": "array", "description": "1〜3件", "items": {
+            "type": "object", "additionalProperties": False, "required": ["ledger", "part", "before", "after", "plain"],
+            "properties": {
+                "ledger": {"type": "string", "enum": list(LEDGER_LABEL)},
+                "part": {"type": "string", "enum": list(REPORT_PARTS)},
+                "before": {"type": "string", "description": "前の版の報告のその欄から、そのまま写した文（1〜2文）"},
+                "after": {"type": "string", "description": "直した版の報告のその欄から、そのまま写した文（1〜2文）"},
+                "plain": {"type": "string", "description": "店長に向けて、何が変わったか（1文）"},
+            }}},
+    },
+}
+
+PLAIN_SYSTEM = """あなたは、店の分析担当（AI）の仕事のやり方の直しを、店長に説明する係です。店長は IT に詳しくありません。
+渡されるもの：直しの説明（作る人向け）、残した／戻した理由、決まった問いの確かめの理由、
+同じ見本の台帳で「前の版」と「直した版」が実際に書いた報告（欄ごと）。
+
+書くこと：
+- headline：届く報告がどう変わるかを1文。手順書・指示文・節の話ではなく、報告の話をする
+- decision_plain：残した／戻した理由を1〜2文。戻した時は、直した版の報告のどこが言い過ぎだったかを言う
+- report_changes：直しで変わった所を1〜3件。before と after は、その欄の文から**一字一句そのまま**写す（要約・言い換え・つなぎ合わせをしない。1〜2文に切り出すのはよい）。
+  戻した時は、言い過ぎた文を after に入れる
+- plain：その変化を店長の言葉で1文
+
+決まり：
+- 英字の言葉（ファイル名・欄の名前・step_01・JSON・CSV・スクリプトなど）を使わない。「報告の◯◯の欄」「集計」と言う
+- 確かめていないことを言わない。見込みは見込みと言う
+"""
+
+
+def _part_text(report: dict | None, part: str) -> str:
+    """報告の欄の文を1つの文字列にする（抜き出しが本当にあるかを確かめる用）。"""
+    if not report:
+        return ""
+    v = report.get(part)
+    out: list[str] = []
+    def walk(x) -> None:
+        if isinstance(x, str):
+            out.append(x)
+        elif isinstance(x, dict):
+            for y in x.values():
+                walk(y)
+        elif isinstance(x, list):
+            for y in x:
+                walk(y)
+    walk(v)
+    return "\n".join(out)
+
+
+def _squash(s: str) -> str:
+    return re.sub(r"\s+", "", s)
+
+
+def check_plain(plain: dict, base: dict, cand: dict) -> dict:
+    """抜き出しが本当に報告にあるか・英字の言葉が混ざっていないかを確かめ、画面に出す形にする。"""
+    kept, dropped = [], 0
+    for c in plain.get("report_changes", []):
+        b = _part_text(base[c["ledger"]].get("report"), c["part"])
+        a = _part_text(cand[c["ledger"]].get("report"), c["part"])
+        if _squash(c["before"]) in _squash(b) and _squash(c["after"]) in _squash(a) and c["before"] and c["after"]:
+            kept.append({**c, "part_label": REPORT_PARTS[c["part"]], "ledger_label": LEDGER_LABEL[c["ledger"]]})
+        else:
+            dropped += 1
+    words = sorted({w for t in [plain.get("headline", ""), plain.get("decision_plain", "")] + [c["plain"] for c in kept]
+                    for w in JARGON.findall(t) if w not in FIELD_WORDS})
+    return {"headline": plain.get("headline", ""), "decision_plain": plain.get("decision_plain", ""),
+            "report_changes": kept[:3], "dropped": dropped, "jargon": words}
+
+
+def plain_explain(proposal: dict, decision: str, reason: str, base: dict, cand: dict) -> dict:
+    """現場の言葉で言い直す（Sonnet を1回）。"""
+    import anthropic
+
+    reports = {k: {"前の版": {p: base[k].get("report", {}).get(p) for p in REPORT_PARTS},
+                   "直した版": {p: cand[k].get("report", {}).get(p) for p in REPORT_PARTS}} for k in LEDGER_LABEL}
+    judge = {k: {"前の版": base[k].get("judge"), "直した版": cand[k].get("judge")} for k in LEDGER_LABEL}
+    content = (f"## 直しの説明（作る人向け）\n```json\n{json.dumps(proposal.get('changes', []), ensure_ascii=False, indent=1)}\n```\n\n"
+               f"## 判定\n{decision}：{reason}\n\n"
+               f"## 決まった問いの確かめ\n```json\n{json.dumps(judge, ensure_ascii=False, indent=1)}\n```\n\n"
+               f"## 台帳の呼び名\n{json.dumps(LEDGER_LABEL, ensure_ascii=False)}\n"
+               f"## 報告の欄の呼び名\n{json.dumps(REPORT_PARTS, ensure_ascii=False)}\n\n"
+               f"## 報告（台帳ごと・欄ごと）\n```json\n{json.dumps(reports, ensure_ascii=False, indent=1)}\n```")
+    out: dict = {}
+    # 空で返ってきたら1回だけ聞き直す。断られた時（出力が無い）は Opus で聞き直す
+    for model in (PLAIN_MODEL, IMPROVER_MODEL):
+        resp = anthropic.Anthropic().beta.messages.create(
+            model=model, max_tokens=4000, system=PLAIN_SYSTEM,
+            betas=["server-side-fallback-2026-07-01"], fallbacks="default",
+            output_config={"format": {"type": "json_schema", "schema": PLAIN_SCHEMA}},
+            messages=[{"role": "user", "content": content}],
+        )
+        plain = json.loads(next((b.text for b in resp.content if b.type == "text"), "{}"))
+        out = check_plain(plain, base, cand)
+        if out["headline"] and out["report_changes"]:
+            break
+    return out
