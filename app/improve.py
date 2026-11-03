@@ -147,7 +147,7 @@ def from_saved_run(run: dict, plant: bool) -> dict:
 
 
 def evaluate_one(system: str, plant: bool, model: str = config.DEFAULT_MODEL) -> dict:
-    with tempfile.TemporaryDirectory() as tmp:
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
         return _one(system, plant, Path(tmp), model)
 
 
@@ -179,7 +179,7 @@ def _one(system: str, plant: bool, workdir: Path, model: str) -> dict:
 def evaluate(system: str, model: str = config.DEFAULT_MODEL) -> dict:
     """仕込みあり・なしの台帳で並べて回し、物差しの結果を返す（鍵が要る・1回 $2 前後）。"""
     results: dict[str, dict] = {}
-    with tempfile.TemporaryDirectory() as tmp:
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
         def go(plant: bool) -> None:
             results["plant" if plant else "noplant"] = _one(system, plant, Path(tmp), model)
         threads = [threading.Thread(target=go, args=(p,)) for p in (True, False)]

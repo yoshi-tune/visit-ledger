@@ -351,6 +351,7 @@ def add_coupons(conn) -> None:
     ).fetchall()
     reserved = {r[0] for r in conn.execute("SELECT DISTINCT session_id FROM reservations")}
     used_codes: set[str] = set()
+    redeemed: set[str] = set()
     for s in sessions:
         if rng.random() >= COUPON_SHOW:
             continue
@@ -359,19 +360,22 @@ def add_coupons(conn) -> None:
             code = "".join(rng.choice(CODE_CHARS) for _ in range(6))
         used_codes.add(code)
         started = datetime.fromisoformat(s["started_at"])
-        ledger.issue_coupon(conn, s["session_id"], code, fmt(started + timedelta(seconds=rng.randint(20, 120))))
+        # 2件来店したセッションは2回並ぶ。2回目は前に出した番号が返る（番号は1つ・使うのも1回）
+        code = ledger.issue_coupon(conn, s["session_id"], code, fmt(started + timedelta(seconds=rng.randint(20, 120))))
         staff = rng.choice(STAFF)
         if s["visited_at"]:  # 予約して来店した人：来店の時に使う
-            if rng.random() < COUPON_USE_VISITED:
+            if rng.random() < COUPON_USE_VISITED and code not in redeemed:
                 at = datetime.fromisoformat(s["visited_at"]) + timedelta(minutes=2)
                 ledger.redeem_coupon(conn, code, fmt(at), staff)
+                redeemed.add(code)
         elif s["session_id"] not in reserved:  # 予約しなかった人：数日のうちに予約なしで来る
-            if rng.random() < COUPON_USE_WALKIN:
+            if rng.random() < COUPON_USE_WALKIN and code not in redeemed:
                 day = started.date() + timedelta(days=rng.randint(1, 6))
                 while day.weekday() in DEFAULT_CLOSED_WEEKDAYS:
                     day += timedelta(days=1)
                 if day < TODAY:
                     ledger.redeem_coupon(conn, code, fmt(at_time(day, rng.randint(10, 16), rng.choice((0, 30)))), staff)
+                    redeemed.add(code)
 
 
 def main() -> None:
