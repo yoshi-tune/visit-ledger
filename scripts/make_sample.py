@@ -67,6 +67,13 @@ COUPON_USE_VISITED = 0.60   # 予約して来店した人のうち、クーポ�
 COUPON_USE_WALKIN = 0.08    # 予約しなかった人のうち、クーポンを持って予約なしで来た割合
 CODE_CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"  # 見分けにくい字（0/O・1/I/L）を除く
 
+# これからの予約（来店予定日が明日〜1週間先の確定予約）。受付の「前日のお知らせ」の見本に使う。
+# 乱数は別の種で、クーポンまで作り終えた後に足す（来店率・仕込みの数字は動かさない。来店はまだなので来店待ちになる）
+UPCOMING_SEED = SEED + 2
+# (今日から何日後, 件数, うち予約を送ってから来店予定日まで8日以上のもの)
+# 7日後は、今日より前に送って7日以内に来る予約が作れないので、2件とも8日以上
+UPCOMING = ((1, 5, 3), (2, 3, 1), (3, 2, 1), (5, 3, 1), (6, 2, 0), (7, 2, 2))
+
 
 def fmt(dt: datetime) -> str:
     return dt.strftime("%Y-%m-%dT%H:%M:%S")
@@ -336,6 +343,7 @@ def build(out: Path, plant: bool) -> None:
             ledger.cancel_visit(conn, no, fmt(mistaken + timedelta(minutes=3)), staff)
 
     add_coupons(conn)
+    add_upcoming(conn)
     conn.close()
 
 
@@ -376,6 +384,58 @@ def add_coupons(conn) -> None:
                 if day < TODAY:
                     ledger.redeem_coupon(conn, code, fmt(at_time(day, rng.randint(10, 16), rng.choice((0, 30)))), staff)
                     redeemed.add(code)
+
+
+def add_upcoming(conn) -> None:
+    """これからの予約を足す。8日以上前に送った予約は、予約もクーポンもまだ無い施策の LP のセッションから作る。
+    近い日に送った予約は、見本の LP の閲覧が 10月で終わっているので、その日の新しい閲覧を作ってから入れる（LINE が多め）。
+    どちらも予約ボタンを押した記録も足す。"""
+    rng = random.Random(UPCOMING_SEED)
+    sessions = conn.execute(
+        "SELECT s.session_id, s.started_at FROM sessions s"
+        " WHERE s.campaign != ? AND NOT EXISTS (SELECT 1 FROM reservations r WHERE r.session_id = s.session_id)"
+        " AND NOT EXISTS (SELECT 1 FROM coupons c WHERE c.session_id = s.session_id)"
+        " ORDER BY s.started_at, s.session_id",
+        (ledger.UNKNOWN,),
+    ).fetchall()
+    used: set[str] = set()
+    taken: dict[tuple[date, str], int] = {}
+    numbers = {r[0] for r in conn.execute("SELECT reserve_no FROM reservations")}
+    i = 200  # 見本の名前・電話の番号（前からある予約と重ならないように）
+    for ahead, n, n_long in UPCOMING:
+        day = TODAY + timedelta(days=ahead)
+        assert day.weekday() not in DEFAULT_CLOSED_WEEKDAYS, day
+        for k in range(n):
+            long_lead = k < n_long
+            if long_lead:
+                pool = [s for s in sessions if s["session_id"] not in used
+                        and (day - datetime.fromisoformat(s["started_at"]).date()).days >= 8]
+                s = rng.choice(pool)
+                sid, started = s["session_id"], datetime.fromisoformat(s["started_at"])
+            else:
+                lead = rng.randint((day - TODAY).days + 1, 7)  # 送ったのは今日より前・来店予定日まで7日以内
+                started = at_time(day - timedelta(days=lead), rng.randint(8, 21), rng.randint(0, 59))
+                sid = f"{rng.getrandbits(48):012x}"
+                ledger.create_session(conn, sid, fmt(started), CAMPAIGN, "line" if rng.random() < 0.7 else "flyer", STORE_ID)
+                ledger.add_event(conn, sid, fmt(started), "lp_view")
+            used.add(sid)
+            tap = started + timedelta(minutes=rng.randint(1, 5))
+            created = tap + timedelta(minutes=rng.randint(2, 6))
+            free = [x for x in DEFAULT_SLOTS if taken.get((day, x), 0) < DEFAULT_CAPACITY]
+            slot = rng.choice(free)
+            taken[(day, slot)] = taken.get((day, slot), 0) + 1
+            no = f"R{rng.randint(100000, 999999)}"
+            while no in numbers:
+                no = f"R{rng.randint(100000, 999999)}"
+            numbers.add(no)
+            i += 1
+            ledger.add_event(conn, sid, fmt(tap), "reserve_tap")
+            ledger.create_reservation(
+                conn, reserve_no=no, submit_key=f"{rng.getrandbits(64):016x}", session_id=sid,
+                menu=rng.choices([m for m, _ in MENU_SHARE], [w for _, w in MENU_SHARE])[0],
+                reserved_for=fmt(datetime.combine(day, time.fromisoformat(slot))), created_at=fmt(created),
+                customer_name=f"見本 {i:03d}", customer_phone=f"090-0000-{i:04d}",
+            )
 
 
 def main() -> None:

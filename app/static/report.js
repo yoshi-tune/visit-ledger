@@ -42,6 +42,20 @@ export function renderReport(run) {
         el("p", {}, [pr.finding]),
       ]));
     }
+    // 前日のお知らせのその後（記録がある時だけ。欄が無い前の報告・見本の報告には出さない）。並べるのは観測まで
+    const rr = r.reminder_review;
+    if (rr && rr.had_reminders) {
+      const t = el("table");
+      t.append(el("tr", {}, [el("th", {}, [""]), el("th", { class: "r" }, ["来店 ／（来店＋来店未記録）"]), el("th", { class: "r" }, ["来店待ち"])]));
+      for (const g of rr.groups) {
+        t.append(el("tr", {}, [
+          el("td", {}, [g.label]),
+          el("td", { class: "r" }, [g.denominator ? `${g.visited} / ${g.denominator}（${Math.round((g.visited / g.denominator) * 100)}%）` : "— / 0（算出不可）"]),
+          el("td", { class: "r" }, [String(g.waiting)]),
+        ]));
+      }
+      out.push(block("前日のお知らせのその後（観測。効いたとは言いません）", [el("div", { class: "table-wrap" }, [t]), el("p", {}, [rr.finding])]));
+    }
     const rec = r.reconciliation;
     // 先に読むもの：見立ての変化・次の一手・仮説。残りは開いた時だけ見る（検算は食い違いがある時だけ開いておく）
     out.push(block("見立ての変化", [el("div", { class: "views" }, [
@@ -59,6 +73,8 @@ export function renderReport(run) {
         el("dt", {}, ["比べる相手"]), el("dd", {}, [n.comparison]),
         el("dt", {}, ["仮置きの目標"]), el("dd", {}, [n.provisional_target]),
       ]),
+      // 次の一手を受付の仕事にする（依頼の文は下書きを出す。反映するかは人が決める）
+      el("a", { class: "btn ask", href: `/maintenance?from=${encodeURIComponent(run.analysis_id)}` }, ["ナットクに頼む（受付でできるようにする）"]),
     ]));
     out.push(block("原因の仮説（言い切りません）", (r.hypotheses || []).map((/** @type {any} */ h) =>
       el("div", { class: "card", style: "box-shadow:none;margin-bottom:8px" }, [

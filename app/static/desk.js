@@ -2,6 +2,7 @@
 // 受付：今日の予約に来店を付ける・来店の取り消し・日時の変更・取消・名前で探す・押し忘れの後日記録。
 // 予約はお客様が送った時点で確定しているので、店から電話で確定する作業は無い。
 // 名前での検索は画面の中だけで行う（名前を URL やログに出さない）。
+// 「ナットクに頼む」で足したタブ（例：前日のお知らせ）は、当てはまる予約をサーバーが数えて返し、ここでは並べて記録を付けるだけ。
 import { addDays, api, availabilityPicker, byId, el, fmtDateTime, fmtDay, pageLoading, srcLabel, toast } from "./common.js";
 import { mascot, say } from "./mascot.js";
 
@@ -31,8 +32,16 @@ const REFRESH_MS = 30000;
 let all = [];
 /** @type {any} */
 let conf = null;
-let tab = sessionStorage.getItem("vl:desk-tab") || "today";
-if (!(tab in HINT)) tab = "today";
+// 「ナットクに頼む」の「受付で見る」からは、足したタブを直接開く（/desk?tab=x:tab1）
+let tab = new URLSearchParams(location.search).get("tab") || sessionStorage.getItem("vl:desk-tab") || "today";
+if (!(tab in HINT) && !tab.startsWith("x:")) tab = "today";
+/** 足したタブ（サーバーが条件で選んだ予約番号つき） @type {{id: string, title: string, conditions_text: string[], reserve_nos: string[]}[]} */
+let extraTabs = [];
+/** 予約番号 → お知らせの記録 @type {Record<string, {at: string, result: string, handled_by: string}[]>} */
+let reminders = {};
+const REMINDER = { sent: "送った", replied: "返事あり", rescheduled: "日時を変えた" };
+/** @returns {typeof extraTabs[number] | undefined} */
+const currentExtra = () => extraTabs.find((t) => `x:${t.id}` === tab);
 let staff = sessionStorage.getItem("vl:staff") || "A";
 let query = "";
 let pastDay = "";
@@ -84,6 +93,21 @@ function card(r) {
   const actions = el("div", { class: "actions" });
   const box = el("div", { class: "card rcard" }, [top, meta, actions]);
 
+  const extra = currentExtra();
+  if (extra) {
+    // お知らせの結果を残す（実際には送らず、記録だけ）。日時そのものを変える時は下の「日時を変える」から
+    const done = reminders[r.reserve_no] || [];
+    if (done.length) {
+      const last = done[done.length - 1];
+      box.insertBefore(el("div", { class: "small muted" }, [
+        `お知らせ：${done.map((d) => REMINDER[/** @type {keyof typeof REMINDER} */ (d.result)] || d.result).join(" → ")}（最後 ${fmtDateTime(last.at)}・${last.handled_by}）`,
+      ]), actions);
+    }
+    for (const [result, label] of Object.entries(REMINDER)) {
+      actions.append(btn(label, () => act("/api/reminders", { reserve_no: r.reserve_no, result, desk_tab_id: extra.id },
+        `${r.customer_name} 様：「${label}」を記録しました`), "btn soft sm"));
+    }
+  }
   if (tab === "past") {
     actions.append(btn(`${fmtDay(pastDay)} に来店`, () => act("/api/visits",
       { reserve_no: r.reserve_no, visited_on: pastDay }, `${r.customer_name} 様の来店を ${fmtDay(pastDay)} に記録しました`, undefined, true), "btn block"));
@@ -138,12 +162,18 @@ function render() {
   for (const b of document.querySelectorAll(".tabs button")) {
     b.setAttribute("aria-selected", String(/** @type {HTMLElement} */ (b).dataset.tab === tab));
   }
-  byId("hint").textContent = HINT[/** @type {keyof typeof HINT} */ (tab)];
+  renderTabs();
+  const extraTab = currentExtra();
+  if (tab.startsWith("x:") && !extraTab) tab = "today";  // 取り消されたタブを開いていた時
+  byId("hint").textContent = extraTab
+    ? `条件：${extraTab.conditions_text.join("・")}。送ったら「送った」、返事があれば「返事あり」「日時を変えた」を押してください（実際には送りません・記録だけ）。日時そのものは「日時を変える」から。`
+    : HINT[/** @type {keyof typeof HINT} */ (tab)];
 
   const extra = byId("extra");
   /** @type {Reservation[]} */
   let rows = [];
-  if (tab === "today") { rows = todayList; extra.replaceChildren(); }
+  if (extraTab) { const set = new Set(extraTab.reserve_nos); rows = all.filter((r) => set.has(r.reserve_no)); extra.replaceChildren(); }
+  else if (tab === "today") { rows = todayList; extra.replaceChildren(); }
   else if (tab === "visited") { rows = visited; extra.replaceChildren(); }
   else if (tab === "upcoming") { rows = upcoming; extra.replaceChildren(); }
   else if (tab === "search") {
@@ -182,8 +212,24 @@ function render() {
   list.replaceChildren(...(rows.length ? rows.map(card) : [emptyState()]));
 }
 
+/** 足したタブのボタン（はじめからあるタブの後ろに並べる） */
+function renderTabs() {
+  const bar = /** @type {HTMLElement} */ (document.querySelector(".tabs"));
+  for (const b of bar.querySelectorAll("button[data-extra]")) b.remove();
+  for (const t of extraTabs) {
+    const b = el("button", { role: "tab", "data-tab": `x:${t.id}`, "data-extra": "1" },
+      [t.title, el("span", { class: "count hot" }, [String(t.reserve_nos.length)])]);
+    bar.append(b);
+  }
+  for (const b of bar.querySelectorAll("button")) {
+    b.setAttribute("aria-selected", String(/** @type {HTMLElement} */ (b).dataset.tab === tab));
+  }
+}
+
 function emptyState() {
-  const [text, mood] = tab === "search" && !query
+  const [text, mood] = currentExtra()
+    ? ["条件に合う予約は、今はありません。", "normal"]
+    : tab === "search" && !query
     ? ["お名前の一部を入れると探せますよ。", "normal"]
     : EMPTY[/** @type {keyof typeof EMPTY} */ (tab)];
   return el("div", { class: "empty", style: "grid-column:1/-1" }, [
@@ -192,8 +238,10 @@ function emptyState() {
 }
 
 async function load() {
-  const data = await api("/api/reservations");
+  const [data, tabs] = await Promise.all([api("/api/reservations"), api("/api/desk-tabs")]);
   all = data.reservations;
+  extraTabs = tabs.tabs;
+  reminders = tabs.reminders;
   const t = new Date();
   byId("updated").textContent = `最終更新 ${String(t.getHours()).padStart(2, "0")}:${String(t.getMinutes()).padStart(2, "0")}`;
   render();
@@ -219,15 +267,16 @@ async function main() {
     });
     seg.append(b);
   }
-  for (const b of document.querySelectorAll(".tabs button")) {
-    b.addEventListener("click", () => {
-      tab = /** @type {HTMLElement} */ (b).dataset.tab || "today";
-      sessionStorage.setItem("vl:desk-tab", tab);
-      openPicker = "";
-      byId("extra").replaceChildren();
-      render();
-    });
-  }
+  // 足したタブは後から並ぶので、タブの並び全体で押されたボタンを受ける
+  /** @type {HTMLElement} */ (document.querySelector(".tabs")).addEventListener("click", (e) => {
+    const b = /** @type {HTMLElement | null} */ (/** @type {HTMLElement} */ (e.target).closest("button[data-tab]"));
+    if (!b) return;
+    tab = b.dataset.tab || "today";
+    sessionStorage.setItem("vl:desk-tab", tab);
+    openPicker = "";
+    byId("extra").replaceChildren();
+    render();
+  });
   await load();
   setInterval(refresh, REFRESH_MS);
   document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(); });

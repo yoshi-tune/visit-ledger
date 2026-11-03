@@ -18,7 +18,7 @@ from fastapi.responses import FileResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from app import analysis, config, funnel, ledger
+from app import analysis, config, funnel, ledger, maintenance
 
 if not config.DB_PATH.exists():
     # 初めての起動：見本の台帳を作る（scripts/make_sample.py と同じ中身。作り直す時はそちらを回す）
@@ -67,6 +67,9 @@ def normalize(value: str) -> str:
         return fmt(datetime.fromisoformat(value))
     except ValueError as e:
         raise HTTPException(400, f"日時の形が読めません: {value}") from e
+
+
+STAFF = ("A", "B")  # 見本の担当（権限と暗証番号は、まだ作っていない）
 
 
 class StaffIn(BaseModel):
@@ -137,6 +140,11 @@ def improve_page() -> FileResponse:
     return page("improve.html")
 
 
+@app.get("/maintenance", include_in_schema=False)
+def maintenance_page() -> FileResponse:
+    return page("maintenance.html")
+
+
 @app.get("/settings", include_in_schema=False)
 def settings_page() -> FileResponse:
     return page("settings.html")
@@ -152,7 +160,7 @@ def get_config(conn: sqlite3.Connection = Depends(get_conn)) -> dict:
         "store": store,
         "menus": list(ledger.MENUS),
         "days_ahead": 14,  # お客様が予約できるのは「今日」から何日先まで
-        "staff": ["A", "B"],
+        "staff": list(STAFF),
         "weekdays": list(ledger.WEEKDAYS),
         "period": {"from": config.PERIOD_FROM.isoformat(), "to": config.PERIOD_TO.isoformat()},
         "models": [{"id": k, **v} for k, v in config.MODELS.items()],
@@ -313,6 +321,135 @@ def undo_coupon(code: str, body: StaffIn, conn: sqlite3.Connection = Depends(get
     c = _coupon_or_404(conn, code)
     guard(ledger.undo_coupon, conn, c["code"], fmt(config.now()), body.staff)
     return {"ok": True}
+
+
+# ---- API：ナットクに頼むメンテナンス（受付のタブ・前日のお知らせ） ----------------------------
+
+class ChangeIn(BaseModel):
+    staff: str
+    text: str = Field(min_length=1, max_length=600)
+    source_analysis_id: str | None = None
+
+
+def _change_view(conn: sqlite3.Connection, row: dict) -> dict:
+    """画面に出す形。見本（件数と一覧）は、出すたびにアプリが今の台帳で数える。"""
+    p = json.loads(row["proposal_json"]) if row["proposal_json"] else {}
+    tab = p.get("tab_checked")
+    out = {k: row[k] for k in ("id", "created_at", "requested_by", "text", "source_analysis_id", "status",
+                               "reason", "applied_version", "applied_by", "applied_at")}
+    out.update(reply=p.get("reply"), mode=p.get("mode"), sample_text=p.get("sample_text"), tab=tab,
+               conditions_text=maintenance.describe(tab["conditions"]) if tab else [])
+    if tab:
+        out["preview"] = maintenance.preview(ledger.list_reservations(conn, config.STORE_ID), tab["conditions"], config.TODAY)
+    return out
+
+
+@app.get("/api/change-requests")
+def list_change_requests(conn: sqlite3.Connection = Depends(get_conn)) -> dict:
+    version, settings = ledger.current_settings(conn)
+    items = [_change_view(conn, r) for r in ledger.list_change_requests(conn)]
+    last = next((i for i in items if i["status"] == "applied" and i["applied_version"] == version), None)
+    return {"version": version, "tabs": [{"id": t["id"], "title": t["title"], "conditions_text": maintenance.describe(t["conditions"])}
+                                         for t in settings["desk_tabs"]],
+            "can_revert": bool(last), "items": items}
+
+
+@app.get("/api/change-requests/draft")
+def draft_change(from_analysis: str, conn: sqlite3.Connection = Depends(get_conn)) -> dict:
+    """分析の「次の一手」から、依頼の文の下書きを作る。"""
+    run = analysis.get(conn, from_analysis)
+    if not run or not run.get("report"):
+        raise HTTPException(404, "その分析の報告がありません")
+    return {"text": maintenance.draft_text(run["report"].get("next_action")), "source_analysis_id": from_analysis}
+
+
+@app.post("/api/change-requests")
+def create_change(body: ChangeIn, conn: sqlite3.Connection = Depends(get_conn)) -> dict:
+    """依頼を受けて、ナットク（Claude）に条件を提案させる。部品から外れた案は捨てる（記録は「捨てた」で残す）。"""
+    if body.staff not in STAFF:
+        raise HTTPException(400, "担当を選んでください")
+    _, settings = ledger.current_settings(conn)
+    rid = ledger.add_change_request(conn, fmt(config.now()), body.staff, body.text.strip(), body.source_analysis_id)
+    try:
+        proposal, mode = maintenance.propose(body.text.strip(), settings)
+        tab = maintenance.check_proposal(proposal, settings)
+    except maintenance.ProposalError as e:
+        ledger.update_change_request(conn, rid, status="failed", reason=f"提案を捨てました：{e}",
+                                     proposal_json=json.dumps({"mode": locals().get("mode")}, ensure_ascii=False))
+        return _change_view(conn, ledger.get_change_request(conn, rid))
+    except Exception as e:  # 呼び出しの失敗（通信・鍵など）
+        ledger.update_change_request(conn, rid, status="failed", reason=f"提案を作れませんでした：{type(e).__name__}")
+        raise HTTPException(502, "提案を作れませんでした。少し待ってからもう一度頼んでください") from e
+    record = {"mode": mode, "reply": proposal.get("reply"), "raw": proposal, "tab_checked": tab,
+              **({"sample_text": maintenance.sample_text()} if mode == "sample" else {})}
+    ledger.update_change_request(conn, rid, proposal_json=json.dumps(record, ensure_ascii=False),
+                                 **({} if tab else {"status": "rejected", "reason": "決まった部品では表せない依頼でした"}))
+    return _change_view(conn, ledger.get_change_request(conn, rid))
+
+
+@app.post("/api/change-requests/{request_id}/apply")
+def apply_change(request_id: int, body: StaffIn, conn: sqlite3.Connection = Depends(get_conn)) -> dict:
+    """人が「反映する」を押した時だけ、設定の新しい版として保存する（add_desk_tab）。"""
+    row = ledger.get_change_request(conn, request_id)
+    if not row:
+        raise HTTPException(404, "その依頼はありません")
+    tab = (json.loads(row["proposal_json"] or "{}")).get("tab_checked")
+    if not tab:
+        raise HTTPException(400, "反映できる提案がありません")
+    _, settings = ledger.current_settings(conn)
+    try:
+        tab = maintenance.validate_tab(tab)  # 保存の前にもう一度確かめる
+        maintenance.check_proposal({"possible": True, "reply": "", "tab": tab}, settings)
+    except maintenance.ProposalError as e:
+        raise HTTPException(400, str(e)) from e
+    new = maintenance.with_tab(settings, tab, f"tab{request_id}")
+    version = guard(ledger.apply_change, conn, request_id, new, fmt(config.now()), body.staff)
+    return {"ok": True, "version": version}
+
+
+@app.post("/api/change-requests/{request_id}/reject")
+def reject_change(request_id: int, body: StaffIn, conn: sqlite3.Connection = Depends(get_conn)) -> dict:
+    row = ledger.get_change_request(conn, request_id)
+    if not row or row["status"] != "proposed":
+        raise HTTPException(400, "やめられるのは、まだ反映していない提案だけです")
+    ledger.update_change_request(conn, request_id, status="rejected", reason=f"{body.staff} がやめた")
+    return {"ok": True}
+
+
+@app.post("/api/change-requests/revert-last")
+def revert_last_change(body: StaffIn, conn: sqlite3.Connection = Depends(get_conn)) -> dict:
+    """さっきの変更を取り消す（設定だけ。お知らせの記録は消さない）。"""
+    return {"ok": True, **guard(ledger.revert_last_change, conn, fmt(config.now()), body.staff)}
+
+
+@app.get("/api/desk-tabs")
+def desk_tabs(conn: sqlite3.Connection = Depends(get_conn)) -> dict:
+    """受付に足したタブと、それぞれに当てはまる予約番号（当てはめはアプリの側の1つの関数）・お知らせの記録。"""
+    version, settings = ledger.current_settings(conn)
+    rows = ledger.list_reservations(conn, config.STORE_ID)
+    tabs = [{"id": t["id"], "title": t["title"], "conditions_text": maintenance.describe(t["conditions"]),
+             "reserve_nos": [r["reserve_no"] for r in maintenance.match(rows, t["conditions"], config.TODAY)]}
+            for t in settings["desk_tabs"]]
+    reminders: dict[str, list] = {}
+    for m in ledger.list_reminders(conn):
+        reminders.setdefault(m["reserve_no"], []).append({k: m[k] for k in ("at", "result", "handled_by", "desk_tab_id")})
+    return {"version": version, "tabs": tabs, "reminders": reminders}
+
+
+class ReminderIn(BaseModel):
+    staff: str
+    reserve_no: str
+    result: str
+    desk_tab_id: str | None = None
+
+
+@app.post("/api/reminders")
+def add_reminder(body: ReminderIn, conn: sqlite3.Connection = Depends(get_conn)) -> dict:
+    """前日のお知らせの結果を残す（実際には送らず、記録だけの見本）。"""
+    if body.staff not in STAFF:
+        raise HTTPException(400, "担当を選んでください")
+    rid = guard(ledger.add_reminder, conn, body.reserve_no, fmt(config.now()), body.result, body.staff, body.desk_tab_id)
+    return {"ok": True, "id": rid}
 
 
 # ---- API：分析担当の改善 ----------------------------------------------------------

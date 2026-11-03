@@ -195,6 +195,42 @@ CREATE TABLE IF NOT EXISTS improvements (
 """
 SCHEMA += _IMPROVEMENT_TABLE
 
+# ナットクに頼むメンテナンス（docs/MAINTENANCE.md 段階 A）：受付のタブの設定の版・頼んだ記録・お知らせの記録。
+# 設定は版ごとに丸ごと残す（取り消しは、前の版の中身で新しい版を作る）。お知らせの記録は、タブを外しても消さない
+_MAINTENANCE_TABLES = """
+CREATE TABLE IF NOT EXISTS settings_versions (
+    version           INTEGER PRIMARY KEY,
+    created_at        TEXT NOT NULL,
+    settings_json     TEXT NOT NULL,
+    change_request_id INTEGER,
+    note              TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS change_requests (
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at         TEXT NOT NULL,
+    requested_by       TEXT,
+    text               TEXT NOT NULL,
+    source_analysis_id TEXT,
+    proposal_json      TEXT,
+    status             TEXT NOT NULL CHECK (status IN ('proposed', 'applied', 'rejected', 'reverted', 'failed')),
+    reason             TEXT,
+    applied_version    INTEGER,
+    applied_by         TEXT,
+    applied_at         TEXT
+);
+
+CREATE TABLE IF NOT EXISTS reminders (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    reserve_no  TEXT NOT NULL REFERENCES reservations(reserve_no),
+    at          TEXT NOT NULL,
+    result      TEXT NOT NULL CHECK (result IN ('sent', 'replied', 'rescheduled')),
+    handled_by  TEXT,
+    desk_tab_id TEXT
+);
+"""
+SCHEMA += _MAINTENANCE_TABLES
+
 
 class LedgerError(Exception):
     """台帳の決まりに合わない操作（存在しない予約、許されない状態の移り変わり、満席など）。"""
@@ -223,6 +259,7 @@ def upgrade_schema(conn: sqlite3.Connection) -> None:
         conn.execute(_MESSAGES_TABLE)
         conn.executescript(_COUPON_TABLES)
         conn.executescript(_IMPROVEMENT_TABLE)
+        conn.executescript(_MAINTENANCE_TABLES)
 
 
 # ---- 店と施策 -------------------------------------------------------------
@@ -696,6 +733,15 @@ def snapshot(conn: sqlite3.Connection, store_id: str, period_from: str, period_t
                 f" WHERE r.session_id IN ({session_filter}) ORDER BY c.at, c.id",
                 p,
             ),
+            # 受付のタブの設定の版（いつ・どのタブがあったか。お客様の情報は入らない）
+            "settings_versions": _rows(conn, "SELECT version, created_at, settings_json FROM settings_versions ORDER BY version"),
+            # 前日のお知らせの記録（送った・返事あり・日時を変えた）。担当は書き出しで落とす
+            "reminders": _rows(
+                conn,
+                "SELECT m.* FROM reminders m JOIN reservations r USING (reserve_no)"
+                f" WHERE r.session_id IN ({session_filter}) ORDER BY m.at, m.id",
+                p,
+            ),
             # クーポン1枚に1行（出した・使った・結んだ予約）。番号そのものは書き出しで落とす
             "coupons": _rows(
                 conn,
@@ -878,3 +924,104 @@ def list_analysis_messages(conn: sqlite3.Connection, analysis_id: str) -> list[d
         "SELECT * FROM analysis_messages WHERE analysis_id = ? ORDER BY id", (analysis_id,)
     ).fetchall()
     return [dict(r) for r in rows]
+
+
+# ---- ナットクに頼むメンテナンス（受付のタブの設定・お知らせの記録） ---------------------------
+
+EMPTY_SETTINGS = {"desk_tabs": []}
+CHANGE_COLUMNS = ("proposal_json", "status", "reason", "applied_version", "applied_by", "applied_at")
+REMINDER_RESULTS = ("sent", "replied", "rescheduled")
+
+
+def current_settings(conn: sqlite3.Connection) -> tuple[int, dict]:
+    """いまの設定の版と中身。まだ版が無ければ 0 と空の設定。"""
+    row = conn.execute("SELECT version, settings_json FROM settings_versions ORDER BY version DESC LIMIT 1").fetchone()
+    return (row["version"], json.loads(row["settings_json"])) if row else (0, json.loads(json.dumps(EMPTY_SETTINGS)))
+
+
+def settings_version(conn: sqlite3.Connection, version: int) -> dict:
+    if version == 0:
+        return json.loads(json.dumps(EMPTY_SETTINGS))
+    row = conn.execute("SELECT settings_json FROM settings_versions WHERE version = ?", (version,)).fetchone()
+    if not row:
+        raise LedgerError(f"設定の版がありません: {version}")
+    return json.loads(row["settings_json"])
+
+
+def add_change_request(conn: sqlite3.Connection, at: str, requested_by: str | None, text: str,
+                       source_analysis_id: str | None) -> int:
+    with conn:
+        cur = conn.execute(
+            "INSERT INTO change_requests (created_at, requested_by, text, source_analysis_id, status)"
+            " VALUES (?, ?, ?, ?, 'proposed')",
+            (at, requested_by, text, source_analysis_id),
+        )
+    return int(cur.lastrowid)
+
+
+def update_change_request(conn: sqlite3.Connection, request_id: int, **fields) -> None:
+    unknown = set(fields) - set(CHANGE_COLUMNS)
+    if unknown or not fields:
+        raise LedgerError(f"change_requests に無い列です: {sorted(unknown)}")
+    with conn:
+        conn.execute(f"UPDATE change_requests SET {', '.join(f'{k} = ?' for k in fields)} WHERE id = ?",
+                     (*fields.values(), request_id))
+
+
+def get_change_request(conn: sqlite3.Connection, request_id: int) -> dict | None:
+    row = conn.execute("SELECT * FROM change_requests WHERE id = ?", (request_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def list_change_requests(conn: sqlite3.Connection) -> list[dict]:
+    return _rows(conn, "SELECT * FROM change_requests ORDER BY id DESC")
+
+
+def apply_change(conn: sqlite3.Connection, request_id: int, settings: dict, at: str, applied_by: str) -> int:
+    """提案した設定を新しい版として保存し、頼んだ記録を「反映した」にする（一緒に成功するか、一緒に失敗する）。"""
+    with conn:
+        req = conn.execute("SELECT status FROM change_requests WHERE id = ?", (request_id,)).fetchone()
+        if not req or req["status"] != "proposed":
+            raise LedgerError("反映できるのは、まだ反映していない提案だけです")
+        version = _new_version(conn, settings, at, request_id, f"依頼 {request_id} を反映")
+        conn.execute("UPDATE change_requests SET status = 'applied', applied_version = ?, applied_by = ?, applied_at = ?"
+                     " WHERE id = ?", (version, applied_by, at, request_id))
+    return version
+
+
+def revert_last_change(conn: sqlite3.Connection, at: str, handled_by: str) -> dict:
+    """さっきの変更（いちばん新しい版を作った反映）を取り消す。前の版の中身で新しい版を作る。お知らせの記録は消さない。"""
+    with conn:
+        last = conn.execute("SELECT version, change_request_id FROM settings_versions ORDER BY version DESC LIMIT 1").fetchone()
+        req = conn.execute("SELECT * FROM change_requests WHERE id = ?", (last["change_request_id"],)).fetchone() if last else None
+        if not last or not req or req["status"] != "applied" or req["applied_version"] != last["version"]:
+            raise LedgerError("取り消せる変更がありません（さっきの変更は、もう取り消してあります）")
+        before = settings_version(conn, last["version"] - 1)
+        version = _new_version(conn, before, at, None, f"依頼 {req['id']} の反映を取り消し（{handled_by}）")
+        conn.execute("UPDATE change_requests SET status = 'reverted' WHERE id = ?", (req["id"],))
+    return {"version": version, "request_id": req["id"]}
+
+
+def _new_version(conn: sqlite3.Connection, settings: dict, at: str, request_id: int | None, note: str) -> int:
+    row = conn.execute("SELECT COALESCE(MAX(version), 0) AS v FROM settings_versions").fetchone()
+    version = row["v"] + 1
+    conn.execute("INSERT INTO settings_versions (version, created_at, settings_json, change_request_id, note)"
+                 " VALUES (?, ?, ?, ?, ?)", (version, at, json.dumps(settings, ensure_ascii=False), request_id, note))
+    return version
+
+
+def add_reminder(conn: sqlite3.Connection, reserve_no: str, at: str, result: str, handled_by: str,
+                 desk_tab_id: str | None) -> int:
+    """前日のお知らせの結果を残す（今回は実際には送らず、記録だけ）。"""
+    if result not in REMINDER_RESULTS:
+        raise LedgerError(f"お知らせの結果の種類にありません: {result}")
+    with conn:
+        _get(conn, reserve_no)
+        cur = conn.execute("INSERT INTO reminders (reserve_no, at, result, handled_by, desk_tab_id) VALUES (?, ?, ?, ?, ?)",
+                           (reserve_no, at, result, handled_by, desk_tab_id))
+    return int(cur.lastrowid)
+
+
+def list_reminders(conn: sqlite3.Connection) -> list[dict]:
+    return _rows(conn, "SELECT * FROM reminders ORDER BY at, id")
+

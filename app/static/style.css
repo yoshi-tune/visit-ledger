@@ -469,3 +469,6 @@ details > summary { cursor: pointer; font-weight: 700; color: var(--ink-2); padd
   .rc-pair { grid-template-columns: 1fr; }
   .rc-arrow { transform: rotate(90deg); justify-self: center; }
 }
+
+/* ナットクに頼む：次の一手のボタン（色の付いた帯の上に置く） */
+.next-action .btn.ask { display: inline-block; margin-top: 14px; background: var(--surface); color: var(--ink); text-decoration: none; }

@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+import json
+
 from datetime import date
 
 from app.ledger import UNKNOWN
@@ -114,6 +116,13 @@ def compute(snapshot: dict, today: date, period_from: date, period_to: date) -> 
         "note": NOTE,
         "campaigns": campaigns,
         "unknown": unknown or {"lp_sessions": 0, "reservations": 0},
+        # 前日のお知らせ：結果ごとの記録の数・記録のある予約の数と、受付に足したタブ（条件・あった期間）。
+        # 来店率は分析担当が CSV から数える
+        "reminders": {
+            **{r: sum(1 for m in snapshot.get("reminders", []) if m["result"] == r) for r in ("sent", "replied", "rescheduled")},
+            "reservations": len({m["reserve_no"] for m in snapshot.get("reminders", [])}),
+            "tabs": desk_tab_history(snapshot.get("settings_versions", [])),
+        },
     }
 
 
@@ -129,3 +138,20 @@ def _stages(counts: dict[str, int]) -> list[dict]:
         out.append(stage)
         previous = n
     return out
+
+
+def desk_tab_history(versions: list[dict]) -> list[dict]:
+    """受付に足したタブが、いつからいつまであったか（設定の版から作る）。until が None なら今もある。"""
+    out: dict[str, dict] = {}
+    for v in versions:
+        ids = set()
+        for t in json.loads(v["settings_json"]).get("desk_tabs", []):
+            ids.add(t["id"])
+            if t["id"] not in out or out[t["id"]]["until"] is not None:
+                out[t["id"]] = {"id": t["id"], "title": t["title"], "conditions": t["conditions"],
+                                "since": v["created_at"], "until": None}
+        for tid, t in out.items():
+            if tid not in ids and t["until"] is None:
+                t["until"] = v["created_at"]
+    return list(out.values())
+

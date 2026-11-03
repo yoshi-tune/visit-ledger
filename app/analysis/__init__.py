@@ -181,11 +181,15 @@ def check_report(report: dict, log: list[dict] | None) -> list[str]:
             notes.append(f"報告の検査：観測 {i} の分子・分母がおかしい（{o['numerator']}/{o['denominator']}）。")
         if not o["steps"]:
             notes.append(f"報告の検査：観測 {i} に根拠のスクリプト名がありません。")
+    for g in report["reminder_review"]["groups"]:
+        if g["visited"] > g["denominator"]:
+            notes.append(f"報告の検査：お知らせの「{g['label']}」の分子が分母より大きい（{g['visited']}/{g['denominator']}）。")
     if log is not None and len(report["steps"]) < STEPS_MIN:
         notes.append(f"報告の検査：steps が {len(report['steps'])} 件（基準は {STEPS_MIN} 件以上）。")
     if log is not None:
         ran = json.dumps([e.get("input") for e in log if e.get("kind") == "tool"], ensure_ascii=False)
-        cited = {s for o in report["observations"] for s in o["steps"]} | {s["step"] for s in report["steps"]}
+        cited = ({s for o in report["observations"] for s in o["steps"]} | {s["step"] for s in report["steps"]}
+                 | {s for g in report["reminder_review"]["groups"] for s in g["steps"]})
         unseen = sorted(s for s in cited if re.fullmatch(r"step_\d+", s) and s not in ran)
         if unseen:
             notes.append("報告の検査：根拠に挙げたスクリプトのうち、実行の記録に見当たらないもの："

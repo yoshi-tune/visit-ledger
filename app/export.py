@@ -22,6 +22,8 @@ ALLOWED: dict[str, tuple[str, ...]] = {
     "campaigns": ("campaign", "src", "store_id", "distributed", "started_on", "ended_on"),
     # クーポン1枚に1行。reserve_no は使った時に結んだ予約（予約なしの来店なら空）。番号（code）は出さない
     "coupons": ("session_id", "issued_at", "redeemed_at", "reserve_no"),
+    # 前日のお知らせの記録（受付のタブで残したもの）。担当は出さない
+    "reminders": ("reserve_no", "at", "result", "desk_tab_id"),
 }
 
 # どの表にあっても出さない列（許可の表を書き換えた時の安全柵）

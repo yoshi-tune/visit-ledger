@@ -2,7 +2,8 @@
   "type": "object",
   "additionalProperties": false,
   "required": ["as_of", "period", "reconciliation", "first_view", "steps", "revised_view", "view_changed",
-               "observations", "hypotheses", "to_check", "next_action", "previous_review"],
+               "observations", "hypotheses", "to_check", "next_action", "previous_review",
+               "reminder_review"],
   "properties": {
     "as_of": {"type": "string", "description": "基準日（YYYY-MM-DD）"},
     "period": {
@@ -63,6 +64,29 @@
       }
     },
     "to_check": {"type": "array", "items": {"type": "string"}, "description": "台帳だけでは確かめられないこと"},
+    "reminder_review": {
+      "type": "object", "additionalProperties": false,
+      "description": "前日のお知らせのその後。reminders.csv に行が無ければ had_reminders を false にし、groups は空・finding は空の文字",
+      "required": ["had_reminders", "groups", "finding"],
+      "properties": {
+        "had_reminders": {"type": "boolean"},
+        "groups": {
+          "type": "array", "description": "送った／送らなかった／返事あり ごとの来店率（観測）",
+          "items": {
+            "type": "object", "additionalProperties": false,
+            "required": ["label", "visited", "denominator", "waiting", "steps"],
+            "properties": {
+              "label": {"type": "string", "description": "送った・送らなかった・返事あり など"},
+              "visited": {"type": "integer", "description": "来店（来店率の分子）"},
+              "denominator": {"type": "integer", "description": "来店＋来店未記録（来店率の分母）"},
+              "waiting": {"type": "integer", "description": "来店待ち（来店予定日がまだ来ていない）"},
+              "steps": {"type": "array", "items": {"type": "string"}, "description": "根拠のスクリプトの名前"}
+            }
+          }
+        },
+        "finding": {"type": "string", "description": "何が言えるか。件数が少なければ「まだ判断できない」。3文まで。効いたと言い切らない"}
+      }
+    },
     "previous_review": {
       "type": "object", "additionalProperties": false,
       "description": "前回の分析の「次の一手」のその後。前回が無ければ had_previous を false にし、残りは空の文字",

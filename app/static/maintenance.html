@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ナットクに頼む</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="app-header">
+    <div class="brand">ナットクに頼む<small id="store"></small></div>
+    <nav class="app-nav"><a href="/desk">受付</a><a href="/desk/coupon">クーポン</a><a href="/dashboard">効果</a><a href="/settings">店の設定</a><a href="/maintenance" aria-current="page">頼む</a><a href="/improve">改善</a></nav>
+  </header>
+  <main class="app-main" style="max-width:900px">
+    <section class="improve-intro">
+      <h1>分析の「次の一手」を、受付の仕事にする</h1>
+      <p class="muted">依頼を書くと、ナットク（Claude）が受付に足す一覧のタブの条件を考えます。使える条件は決まった部品だけで、件数と一覧はアプリが今の台帳で数えて見せます。反映するかは人が決めます。</p>
+      <ul class="improve-rules">
+        <li>🧩 条件に使えるのは「予約の状態・来店予定日が今日から何日後か・予約を送った日から来店予定日までの日数・メニュー・媒体」だけ。ほかの条件の案は捨てます</li>
+        <li>🔒 ナットクに渡すのは、今のタブと部品の一覧と依頼の文だけ。台帳の予約・お客様の名前・電話は渡しません</li>
+        <li>↩️ 反映した後も「さっきの変更を取り消す」で戻せます。お知らせの記録は消えません。来店までの道のりと来店率の数え方は変わりません</li>
+      </ul>
+    </section>
+    <div class="toolbar">
+      <span class="muted" id="source"></span>
+      <div class="row" style="display:flex;gap:10px;align-items:center">
+        <span class="muted">担当</span>
+        <div id="staff" class="seg" role="group" aria-label="担当"></div>
+      </div>
+    </div>
+    <form id="ask" class="card">
+      <label for="text"><b>依頼の文</b></label>
+      <textarea id="text" class="input" rows="4" maxlength="600" style="width:100%;margin-top:8px"></textarea>
+      <div style="margin-top:10px"><button class="btn" type="submit" id="send">ナットクに相談する</button></div>
+    </form>
+    <div id="result"></div>
+    <section class="card" style="margin-top:16px">
+      <h2>今の受付のタブ</h2>
+      <div id="tabs"></div>
+    </section>
+    <details class="fold" style="margin-top:16px">
+      <summary>これまでの依頼</summary>
+      <div id="history" class="fold-body"></div>
+    </details>
+    <p id="error" class="input-error"></p>
+  </main>
+  <script type="module" src="/static/maintenance.js"></script>
+</body>
+</html>
