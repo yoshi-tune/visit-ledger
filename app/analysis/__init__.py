@@ -22,6 +22,7 @@ from app import config, export, ledger
 REPORT_SCHEMA = json.loads((config.ROOT / "agent" / "report_schema.json").read_text(encoding="utf-8"))
 # 基準（rubric）の件数の上限。超えても失敗にはせず、記録に注意として残す（採点が先に見ている）
 LIMITS = {"observations": 8, "hypotheses": 3, "to_check": 4, "steps": 4}
+STEPS_MIN = 2  # 報告に載せる集計の記録の下限（指示文「書く量」。エージェントで回した時だけ確かめる）
 # 鍵が無い時に見せる見本の報告（作ったばかりの見本の台帳で、エージェントを実際に回した結果をそのまま保存したもの）
 SAMPLE_RUN = config.ROOT / "agent" / "sample_run.json"
 
@@ -180,6 +181,8 @@ def check_report(report: dict, log: list[dict] | None) -> list[str]:
             notes.append(f"報告の検査：観測 {i} の分子・分母がおかしい（{o['numerator']}/{o['denominator']}）。")
         if not o["steps"]:
             notes.append(f"報告の検査：観測 {i} に根拠のスクリプト名がありません。")
+    if log is not None and len(report["steps"]) < STEPS_MIN:
+        notes.append(f"報告の検査：steps が {len(report['steps'])} 件（基準は {STEPS_MIN} 件以上）。")
     if log is not None:
         ran = json.dumps([e.get("input") for e in log if e.get("kind") == "tool"], ensure_ascii=False)
         cited = {s for o in report["observations"] for s in o["steps"]} | {s["step"] for s in report["steps"]}

@@ -13,8 +13,10 @@ const DECISION = {
 
 /** @param {number | null | undefined} c */
 const usd = (c) => (c === null || c === undefined ? "—" : `$${(c / 100).toFixed(2)}`);
-/** @param {number | null | undefined} r */
-const rounds = (r) => (r ? `${r}回目で合格` : "3回で通らず");
+/** 採点で書き直せる回数（サーバーの設定から読む） */
+let maxGrades = 3;
+/** 台帳1つの結果を「何回目で合格」にする（採点まで行かなかった回は分けて出す） @param {any} e */
+const rounds = (e) => (e.schema_ok === false ? "報告が作れず" : e.rounds ? `${e.rounds}回目で合格` : `${maxGrades}回で通らず`);
 
 /** 分析担当の仕事の流れの図。変わる節に色、直せない節に鍵 @param {any[]} flow */
 function flowDiagram(flow) {
@@ -41,9 +43,9 @@ function metrics(b, c) {
   /** @param {any} j */
   const ok = (j) => (j ? (j.ok ? "○" : "×") : "—");
   const rows = [
-    row("採点（仕込みあり）", rounds(b.plant.rounds), c ? rounds(c.plant.rounds) : "回している途中",
+    row("採点（仕込みあり）", rounds(b.plant), c ? rounds(c.plant) : "回している途中",
       c ? (c.plant.rounds || 4) <= (b.plant.rounds || 4) : null),
-    row("採点（仕込みなし）", rounds(b.noplant.rounds), c ? rounds(c.noplant.rounds) : "回している途中",
+    row("採点（仕込みなし）", rounds(b.noplant), c ? rounds(c.noplant) : "回している途中",
       c ? (c.noplant.rounds || 4) <= (b.noplant.rounds || 4) : null),
     row("日数の差を見つけたか（仕込みあり）", ok(b.plant.judge), c ? ok(c.plant.judge) : "—", c ? Boolean(c.plant.judge?.ok) : null),
     row("偶然かもしれない差を言い切らなかったか（仕込みなし）", ok(b.noplant.judge), c ? ok(c.noplant.judge) : "—", c ? Boolean(c.noplant.judge?.ok) : null),
@@ -78,8 +80,8 @@ function checks(b, c) {
   const rows = [
     row("チラシが低く見える本当の理由（予約が先の日に多い）を見つけたか（台帳A）", ok(b.plant.judge), c ? ok(c.plant.judge) : "—", c ? Boolean(c.plant.judge?.ok) : null),
     row("差の無い台帳で、偶然かもしれない差を確かな差のように言い切らなかったか（台帳B）", ok(b.noplant.judge), c ? ok(c.noplant.judge) : "—", c ? Boolean(c.noplant.judge?.ok) : null),
-    row("採点に合格した回（台帳A・3回まで書き直せる）", rounds(b.plant.rounds), c ? rounds(c.plant.rounds) : "—", c ? n(c.plant.rounds) <= n(b.plant.rounds) : null),
-    row("採点に合格した回（台帳B・3回まで書き直せる）", rounds(b.noplant.rounds), c ? rounds(c.noplant.rounds) : "—", c ? n(c.noplant.rounds) <= n(b.noplant.rounds) : null),
+    row(`採点に合格した回（台帳A・${maxGrades}回まで書き直せる）`, rounds(b.plant), c ? rounds(c.plant) : "—", c ? n(c.plant.rounds) <= n(b.plant.rounds) : null),
+    row(`採点に合格した回（台帳B・${maxGrades}回まで書き直せる）`, rounds(b.noplant), c ? rounds(c.noplant) : "—", c ? n(c.noplant.rounds) <= n(b.noplant.rounds) : null),
     row("1回の確かめにかかった費用（2つの台帳の合計）", usd(b.total_cost_cents), c ? usd(c.total_cost_cents) : "—",
       c && b.total_cost_cents && c.total_cost_cents !== null ? c.total_cost_cents <= b.total_cost_cents : null),
   ];
@@ -171,7 +173,8 @@ function card(it) {
 }
 
 async function load() {
-  const { items } = await api("/api/improvements");
+  const { items, max_grades: mg } = await api("/api/improvements");
+  if (mg) maxGrades = mg;
   byId("list").replaceChildren(...items.map(card));
   byId("guide").replaceChildren(items.length
     ? say("答えの分かっている見本の台帳で試して、良くなった時だけ残しています。報告の前と後を見て、使うか決めてくださいね。", "normal")

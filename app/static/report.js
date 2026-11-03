@@ -74,7 +74,7 @@ export function renderReport(run) {
       ...rec.differences.map((/** @type {string} */ d) => el("p", { class: rec.matches ? "muted" : "input-error" }, [d])),
       ...(rec.matches ? [el("p", { class: "muted" }, ["同じ入力に対する2つの集計が一致した、という意味です（台帳そのものの正しさの証明ではありません）。"])] : []),
     ], !rec.matches));
-    out.push(fold([`集計を重ねた記録（${(r.steps || []).length}回）`], [el("ol", { class: "timeline" }, (r.steps || []).map((/** @type {any} */ s) =>
+    out.push(fold([`集計の記録（主なもの ${(r.steps || []).length}件）`], [el("ol", { class: "timeline" }, (r.steps || []).map((/** @type {any} */ s) =>
       el("li", {}, [
         el("div", { class: "step-name" }, [s.step]),
         el("div", {}, [el("b", {}, [s.question])]),

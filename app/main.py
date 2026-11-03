@@ -337,7 +337,9 @@ def _improvement_view(row: dict) -> dict:
 
 @app.get("/api/improvements")
 def list_improvements(conn: sqlite3.Connection = Depends(get_conn)) -> dict:
-    return {"items": [_improvement_view(r) for r in ledger.list_improvements(conn)]}
+    from app.analysis.agent_runner import MAX_GRADES
+
+    return {"items": [_improvement_view(r) for r in ledger.list_improvements(conn)], "max_grades": MAX_GRADES}
 
 
 @app.post("/api/improvements/{improvement_id}/apply")

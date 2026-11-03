@@ -198,7 +198,7 @@ def summarize(results: dict[str, dict]) -> dict:
         "plant": p, "noplant": n,
         "all_schema_ok": bool(p.get("schema_ok") and n.get("schema_ok")),
         "all_judge_ok": bool(p.get("judge", {}).get("ok") and n.get("judge", {}).get("ok")),
-        # 合格しなかった回は 4 として数える（採点は最大3回）
+        # 合格しなかった回は 4 として数える（採点は最大3回・agent_runner.MAX_GRADES）
         "total_rounds": sum(r if r else 4 for r in rounds),
         "total_cost_cents": sum(c or 0 for c in costs) if all(c is not None for c in costs) else None,
     }
@@ -206,10 +206,15 @@ def summarize(results: dict[str, dict]) -> dict:
 
 def rounds_text(base: dict, cand: dict | None = None) -> str:
     """台帳ごとの「採点の何回目で合格したか」（合計の点は合格しなかった台帳を4と数えるので、画面と理由には出さない）。"""
-    f = lambda r: f"{r}回目で合格" if r else "3回で通らず"
+    from app.analysis.agent_runner import MAX_GRADES
+
+    def f(e: dict) -> str:
+        if not e.get("schema_ok"):  # 採点まで行かなかった（報告の形が合わない・途中で失敗した）
+            return "報告が作れず"
+        return f"{e['rounds']}回目で合格" if e.get("rounds") else f"{MAX_GRADES}回で通らず"
     parts = []
     for k, label in (("plant", "A"), ("noplant", "B")):
-        parts.append(f"台帳{label} {f(base[k].get('rounds'))}" + (f" → {f(cand[k].get('rounds'))}" if cand else ""))
+        parts.append(f"台帳{label} {f(base[k])}" + (f" → {f(cand[k])}" if cand else ""))
     return "・".join(parts)
 
 

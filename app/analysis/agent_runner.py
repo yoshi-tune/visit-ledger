@@ -27,6 +27,9 @@ DESCRIPTION = (
 )
 
 
+# 採点で直しを求められても、この回数まで書き直す（outcomes の max_iterations）。改善の画面と判定の理由もこの数を使う
+MAX_GRADES = 3
+
 def run(analysis_id: str, files: dict[str, str], funnel: dict,
         on_log: Callable[[dict], None], model: str = config.DEFAULT_MODEL,
         previous: dict | None = None, system: str | None = None) -> dict:
@@ -72,7 +75,7 @@ def run(analysis_id: str, files: dict[str, str], funnel: dict,
         "type": "user.define_outcome",
         "description": DESCRIPTION,
         "rubric": {"type": "text", "content": rubric},
-        "max_iterations": 3,
+        "max_iterations": MAX_GRADES,
     }, on_log)
     if stop == "budget_reached":
         raise RunError("1回の分析の上限（VL_BUDGET_CENTS）に達したので止めました。")

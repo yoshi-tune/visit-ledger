@@ -73,9 +73,10 @@ async function show(code) {
   }
   card.append(actions);
   result.replaceChildren(card);
-  byId("guide").replaceChildren(say(used ? "このクーポンは使用済みです。" : r
+  byId("guide").replaceChildren(say(used ? "このクーポンは使用済みです。" : canVisit
     ? "予約のあるお客様です。来店とクーポンは、1回で一緒に記録できますよ。"
-    : "予約なしで来たお客様です。どの施策で来たかが台帳に残ります。", used ? "think" : "happy"));
+    : r ? "予約のあるお客様です（来店は記録済み）。クーポンを使ったら記録してくださいね。"
+      : "予約なしで来たお客様です。どの施策で来たかが台帳に残ります。", used ? "think" : "happy"));
 }
 
 /** 押している間は同じボタンを押せないようにする @param {HTMLButtonElement} b @param {() => Promise<void>} fn */
