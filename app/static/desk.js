@@ -170,7 +170,7 @@ function render() {
   const extraTab = currentExtra();
   if (tab.startsWith("x:") && !extraTab) tab = "today";  // 取り消されたタブを開いていた時
   byId("hint").textContent = extraTab
-    ? `条件：${extraTab.conditions_text.join("・")}。送ったら「送った」、返事があれば「返事あり」「日時を変えた」を押してください（実際には送りません・記録だけ）。日時そのものは「日時を変える」から。`
+    ? `条件：${extraTab.conditions_text.join("・")}。送ったら「送った」、返事があれば「返事あり」を押してください（実際には送りません・記録だけ）。日時は「日時を変える」から変えると、「日時を変えた」も記録されます。`
     : HINT[/** @type {keyof typeof HINT} */ (tab)];
 
   const extra = byId("extra");
