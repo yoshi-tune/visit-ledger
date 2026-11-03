@@ -160,6 +160,8 @@ export function availabilityPicker(opt) {
  * @param {number} [minMs]
  */
 export function pageLoading(minMs = 700) {
+  // 自動操作（デモ動画の撮影）の時は出さない。撮影は場面ごとに新しいブラウザで開くので、毎回1秒ほど入ってしまうため
+  if (navigator.webdriver) return () => {};
   const key = `vl:loaded:${location.pathname}`;
   let seen = false;
   try { seen = sessionStorage.getItem(key) === "1"; sessionStorage.setItem(key, "1"); } catch { /* 保存できなくても動く */ }
