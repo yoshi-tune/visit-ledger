@@ -54,7 +54,7 @@ export function renderReport(run) {
           el("td", { class: "r" }, [String(g.waiting)]),
         ]));
       }
-      out.push(block("前日のお知らせのその後（観測。効いたとは言いません）", [el("div", { class: "table-wrap" }, [t]), el("p", {}, [rr.finding])]));
+      out.push(block("前日のお知らせのその後（今の条件で数え直した参考の集計。連絡した時の対象を固定したものではなく、効いたとは言いません）", [el("div", { class: "table-wrap" }, [t]), el("p", {}, [rr.finding])]));
     }
     const rec = r.reconciliation;
     // 先に読むもの：見立ての変化・次の一手・仮説。残りは開いた時だけ見る（検算は食い違いがある時だけ開いておく）

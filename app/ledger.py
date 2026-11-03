@@ -228,6 +228,19 @@ CREATE TABLE IF NOT EXISTS reminders (
     handled_by  TEXT,
     desk_tab_id TEXT
 );
+
+-- 間違えて押したお知らせの記録を取り消した記録（取り消した記録の中身と、誰がいつ取り消したか）
+CREATE TABLE IF NOT EXISTS reminder_undos (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    reminder_id INTEGER NOT NULL,
+    reserve_no  TEXT NOT NULL,
+    at          TEXT NOT NULL,
+    result      TEXT NOT NULL,
+    handled_by  TEXT,
+    desk_tab_id TEXT,
+    undone_at   TEXT NOT NULL,
+    undone_by   TEXT NOT NULL
+);
 """
 SCHEMA += _MAINTENANCE_TABLES
 
@@ -1025,9 +1038,27 @@ def add_reminder(conn: sqlite3.Connection, reserve_no: str, at: str, result: str
         raise LedgerError(f"受付で押せるお知らせの結果ではありません: {result}（日時を変えた記録は、日時を変えると残ります）")
     with conn:
         _get(conn, reserve_no)
+        if result == "replied" and not conn.execute(
+                "SELECT 1 FROM reminders WHERE reserve_no = ? AND result = 'sent' LIMIT 1", (reserve_no,)).fetchone():
+            raise LedgerError("「送った」の記録が無い予約には「返事あり」を付けられません（先に「送った」を記録してください）")
         cur = conn.execute("INSERT INTO reminders (reserve_no, at, result, handled_by, desk_tab_id) VALUES (?, ?, ?, ?, ?)",
                            (reserve_no, at, result, handled_by, desk_tab_id))
     return int(cur.lastrowid)
+
+
+def undo_last_reminder(conn: sqlite3.Connection, reserve_no: str, at: str, handled_by: str) -> str:
+    """間違えて押した最後の「送った」「返事あり」を取り消す。取り消した記録は reminder_undos に残す。
+    （「日時を変えた」は日時の変更と一緒に残るので、ここでは取り消さない。日時は「日時を変える」で直す）"""
+    with conn:
+        row = conn.execute("SELECT * FROM reminders WHERE reserve_no = ? AND result IN ('sent', 'replied')"
+                           " ORDER BY at DESC, id DESC LIMIT 1", (reserve_no,)).fetchone()
+        if not row:
+            raise LedgerError("取り消せるお知らせの記録がありません")
+        conn.execute("INSERT INTO reminder_undos (reminder_id, reserve_no, at, result, handled_by, desk_tab_id, undone_at, undone_by)"
+                     " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                     (row["id"], reserve_no, row["at"], row["result"], row["handled_by"], row["desk_tab_id"], at, handled_by))
+        conn.execute("DELETE FROM reminders WHERE id = ?", (row["id"],))
+    return row["result"]
 
 
 def list_reminders(conn: sqlite3.Connection) -> list[dict]:

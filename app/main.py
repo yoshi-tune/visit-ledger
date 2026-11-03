@@ -457,6 +457,15 @@ def add_reminder(body: ReminderIn, conn: sqlite3.Connection = Depends(get_conn))
     return {"ok": True, "id": rid}
 
 
+@app.post("/api/reminders/{reserve_no}/undo")
+def undo_reminder(reserve_no: str, body: StaffIn, conn: sqlite3.Connection = Depends(get_conn)) -> dict:
+    """間違えて押した最後の「送った」「返事あり」を取り消す（取り消した記録は reminder_undos に残る）。"""
+    if body.staff not in STAFF:
+        raise HTTPException(400, "担当を選んでください")
+    result = guard(ledger.undo_last_reminder, conn, reserve_no, fmt(config.now()), body.staff)
+    return {"ok": True, "undone": result}
+
+
 # ---- API：分析担当の改善 ----------------------------------------------------------
 
 def _improvement_view(row: dict) -> dict:

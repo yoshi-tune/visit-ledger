@@ -104,11 +104,22 @@ function card(r) {
       `お知らせ：${done.map((d) => REMINDER[/** @type {keyof typeof REMINDER} */ (d.result)] || d.result).join(" → ")}（最後 ${fmtDateTime(last.at)}・${last.handled_by}）`,
     ]), actions);
   }
-  // 記録のボタンは、足したタブでは予約中のカードに、他のタブでは記録が始まった予約中のカードに出す（実際には送らず、記録だけ）
-  if (r.status === "confirmed" && (extra || done.length)) {
+  // 記録のボタンは、足したタブでは予約中のカードに、他のタブでは記録が始まったカードに出す（来店の後に届いた返事も付けられる。実際には送らず、記録だけ）
+  if ((extra && r.status === "confirmed") || done.length) {
+    const sent = done.some((d) => d.result === "sent");
     for (const [result, label] of Object.entries(REMINDER_BUTTONS)) {
+      if (result === "replied" && !sent) continue; // 返事は「送った」の後だけ
       actions.append(btn(label, () => act("/api/reminders", { reserve_no: r.reserve_no, result, desk_tab_id: extra ? extra.id : null },
         `${r.customer_name} 様：「${label}」を記録しました`), "btn soft sm"));
+    }
+    const manual = done.filter((d) => d.result in REMINDER_BUTTONS);
+    if (manual.length) {
+      const lastLabel = REMINDER_BUTTONS[/** @type {keyof typeof REMINDER_BUTTONS} */ (manual[manual.length - 1].result)];
+      actions.append(btn(`「${lastLabel}」を取り消す`, () => {
+        if (confirm(`${r.customer_name} 様の最後の「${lastLabel}」の記録を取り消しますか？（取り消した記録は残ります）`)) {
+          act(`/api/reminders/${r.reserve_no}/undo`, {}, `「${lastLabel}」の記録を取り消しました`);
+        }
+      }, "btn soft sm"));
     }
   }
   if (tab === "past") {
