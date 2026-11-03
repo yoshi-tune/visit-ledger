@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ナットク台帳のしくみ</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <style>
+    /* 動画（1920×1080）では、上の帯 86px と下の字幕 170px を避けて真ん中に大きく出す */
+    .about { max-width: 1640px; margin: 0 auto; padding: 110px 32px 190px; min-height: 100vh; box-sizing: border-box;
+             display: flex; flex-direction: column; justify-content: center; }
+    .about h1 { font-size: 3rem; margin: 0 0 8px; }
+    .about .lead { font-size: 1.5rem; margin: 0 0 36px; }
+    .roles { display: grid; grid-template-columns: 1fr auto 1fr auto 1fr; gap: 20px; align-items: stretch; }
+    .role { background: var(--surface); border: 1px solid var(--line); border-radius: 18px; padding: 28px 28px 30px; }
+    .role h2 { font-size: 2.125rem; margin: 0 0 6px; }
+    .role .who { font-size: 1.25rem; margin: 0 0 16px; }
+    .role ol, .role ul { margin: 0; padding-left: 1.2em; line-height: 1.75; font-size: 1.5rem; }
+    .role.claude { border: 3px solid var(--accent); }
+    .arrow { align-self: center; font-size: 2.75rem; color: var(--accent); }
+    .handoff { margin-top: 28px; display: flex; gap: 20px; align-items: center; background: var(--surface-2); border-radius: 18px; padding: 18px 28px; font-size: 1.625rem; }
+    .handoff b { color: var(--accent); }
+    @media (max-width: 860px) {
+      .about { padding: 32px 16px; min-height: 0; }
+      .about h1 { font-size: 2rem; }
+      .roles { grid-template-columns: 1fr; }
+      .role ol, .role ul, .handoff { font-size: 1.0625rem; }
+      .role h2 { font-size: 1.5rem; }
+      .arrow { transform: rotate(90deg); justify-self: center; }
+    }
+  </style>
+</head>
+<body>
+  <main class="about">
+    <h1>ナットク台帳のしくみ</h1>
+    <p class="lead muted">チラシや LINE から来店までを1本の台帳でつなぎ、役割を3つに分けています。</p>
+    <div class="roles">
+      <section class="role">
+        <h2>アプリが数える</h2>
+        <p class="who muted">店の手元で動く道具</p>
+        <ol>
+          <li>チラシの QR・LINE のリンク → LP</li>
+          <li>予約（送った時点で確定）</li>
+          <li>受付で来店・クーポンを記録</li>
+          <li>1本の台帳 → 効果の画面（施策ごとの数）</li>
+        </ol>
+      </section>
+      <div class="arrow" aria-hidden="true">→</div>
+      <section class="role claude">
+        <h2>Claude が調べて確かめる</h2>
+        <p class="who muted">分析担当（Managed Agents）と見直し</p>
+        <ul>
+          <li>外へ通信しない箱の中で、台帳を自分で数え直す</li>
+          <li>アプリの数字と一致するかを先に確かめ、基準に合格するまで書き直す</li>
+          <li>見直し：直す役（Opus）が手順を直し、確かめる役（Sonnet）が言い過ぎを止める</li>
+        </ul>
+      </section>
+      <div class="arrow" aria-hidden="true">→</div>
+      <section class="role">
+        <h2>店長が決める</h2>
+        <p class="who muted">人が押すまで変わらない</p>
+        <ul>
+          <li>次に確かめる一手を1つ決める</li>
+          <li>受付のタブを反映するか・取り消すか</li>
+          <li>見直した版を本番に使うか</li>
+        </ul>
+      </section>
+    </div>
+    <div class="handoff">
+      <div id="mascot"></div>
+      <p style="margin:0">台帳から Claude へ渡すのは、<b>名前・電話の列を落とし、番号を仮の番号に置き換えた CSV だけ</b>です。</p>
+    </div>
+  </main>
+  <script type="module" src="/static/about.js"></script>
+</body>
+</html>

@@ -135,6 +135,11 @@ def desk_coupon_page(code: str | None = None) -> FileResponse:
     return page("desk_coupon.html")
 
 
+@app.get("/about", include_in_schema=False)
+def about_page() -> FileResponse:
+    return page("about.html")
+
+
 @app.get("/improve", include_in_schema=False)
 def improve_page() -> FileResponse:
     return page("improve.html")
