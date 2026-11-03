@@ -3,6 +3,7 @@
 import { api, byId, el, fmtDay, pageLoading } from "./common.js";
 import { mascot, say } from "./mascot.js";
 import { guide, renderReport } from "./report.js";
+import { plainWords } from "./plain_words.js";
 
 const id = decodeURIComponent(location.pathname.split("/").pop() || "");
 const form = /** @type {HTMLFormElement} */ (byId("chat-form"));
@@ -47,7 +48,7 @@ function bubble(m) {
       el("span", { class: "spinner", "aria-hidden": "true" }), ` 数え直しています…${tools ? `（実行 ${tools}回）` : ""}`,
     ])]);
   }
-  const body = el("div", { class: `text rich${m.status === "failed" ? " failed" : ""}` }, rich(m.text || ""));
+  const body = el("div", { class: `text rich${m.status === "failed" ? " failed" : ""}` }, rich(plainWords(m.text || "")));
   if (tools) body.append(el("div", { class: "muted small" }, [`台帳を集計し直しました（実行 ${tools}回）`]));
   return el("div", { class: "msg bot" }, [mascot(m.status === "failed" ? "think" : "happy", 36), body]);
 }

@@ -3,6 +3,7 @@
 // 手順書の図・物差しの数字・本当の差分は「詳しく（直す人向け）」に畳む。本番に使うかは人が押して決める。
 import { api, byId, el, fmtDateTime, pageLoading, toast } from "./common.js";
 import { say } from "./mascot.js";
+import { plainWords } from "./plain_words.js";
 
 const DECISION = {
   kept: ["残した", "good"],
@@ -92,9 +93,9 @@ function reportChanges(list) {
   return el("div", { class: "report-changes" }, list.map((c) => el("div", { class: "rc" }, [
     el("div", { class: "rc-head" }, [el("b", {}, [`報告の「${c.part_label}」の欄`]), el("span", { class: "muted" }, [`　${c.ledger_label}`])]),
     el("div", { class: "rc-pair" }, [
-      el("div", { class: "rc-box before" }, [el("div", { class: "rc-tag" }, ["前の版"]), c.before]),
+      el("div", { class: "rc-box before" }, [el("div", { class: "rc-tag" }, ["前の版"]), plainWords(c.before)]),
       el("div", { class: "rc-arrow", "aria-hidden": "true" }, ["→"]),
-      el("div", { class: "rc-box after" }, [el("div", { class: "rc-tag" }, ["直した版"]), c.after]),
+      el("div", { class: "rc-box after" }, [el("div", { class: "rc-tag" }, ["直した版"]), plainWords(c.after)]),
     ]),
     el("p", { class: "rc-plain" }, [c.plain]),
   ])));
@@ -140,7 +141,7 @@ function card(it) {
   if (why) children.push(el("p", { class: "decision-plain" }, [`${it.decision === "kept" ? "残した理由" : "止めた理由"}：${why}`]));
   if (plain?.report_changes?.length) {
     children.push(el("h3", {}, [it.decision === "kept" ? "届く報告がこう変わる" : "直した版の報告で、止めた所"]));
-    children.push(el("p", { class: "muted" }, ["同じ見本の台帳で、前の版と直した版が実際に書いた報告から、そのまま抜き出しています"]));
+    children.push(el("p", { class: "muted" }, ["同じ見本の台帳で、前の版と直した版が実際に書いた報告から抜き出しています（中の名前は、報告の画面と同じく店の言葉に置き換えて出しています）"]));
     children.push(reportChanges(plain.report_changes));
   }
   if (ex && ex.unexplained.length) {

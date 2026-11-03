@@ -2,6 +2,7 @@
 // 分析の報告と、案内役のひと言（効果の画面と分析の画面で使う）。
 import { el } from "./common.js";
 import { say } from "./mascot.js";
+import { plainReport } from "./plain_words.js";
 
 /** @param {string} title @param {(Node | string)[]} children */
 const block = (title, children) => el("section", {}, [el("h3", {}, [title]), ...children]);
@@ -17,7 +18,8 @@ const fold = (head, body, open = false) => {
 export function renderReport(run) {
   const out = [];
   if (run.error) out.push(el("div", { class: "error-box" }, [run.error]));
-  const r = run.report;
+  // 中の名前（step_01・funnel.json・列の名前など）は、画面に出す時だけ店の言葉に置き換える
+  const r = run.report ? plainReport(run.report) : null;
   if (r) {
     if (r.mode === "sample") {
       out.push(el("p", { class: "banner" }, [
@@ -95,6 +97,7 @@ export function renderReport(run) {
   const tools = (run.tool_log || []).filter((/** @type {any} */ e) => e.kind === "tool");
   if (tools.length) {
     const d = el("details", {}, [el("summary", {}, [`Claude が実行した道具の記録（${tools.length}件・アプリの側で記録）`])]);
+    d.append(el("p", { class: "muted" }, ["記録の中の step_01.py などは、報告の「集計1」などに当たります（記録は元の名前のまま出しています）。"]));
     for (const e of tools) {
       const input = typeof e.input === "string" ? e.input : JSON.stringify(e.input, null, 1);
       d.append(el("p", { class: "muted" }, [`${e.tool}${e.is_error ? "（失敗）" : ""}`]), el("pre", {}, [input || ""]),
