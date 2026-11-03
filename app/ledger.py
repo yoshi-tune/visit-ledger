@@ -162,6 +162,17 @@ CREATE TABLE IF NOT EXISTS coupon_redemptions (
     reserve_no  TEXT REFERENCES reservations(reserve_no),
     handled_by  TEXT
 );
+
+-- 間違えて押した「使った」を取り消した記録（取り消した利用の中身と、誰がいつ取り消したか）
+CREATE TABLE IF NOT EXISTS coupon_undos (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    code        TEXT NOT NULL REFERENCES coupons(code),
+    redeemed_at TEXT NOT NULL,
+    reserve_no  TEXT,
+    handled_by  TEXT,
+    undone_at   TEXT NOT NULL,
+    undone_by   TEXT NOT NULL
+);
 """
 SCHEMA += _COUPON_TABLES
 
@@ -424,17 +435,50 @@ def get_coupon(conn: sqlite3.Connection, code: str) -> dict | None:
 def redeem_coupon(conn: sqlite3.Connection, code: str, at: str, handled_by: str) -> str | None:
     """クーポンを店で使ったと記録する（1つの番号で1回だけ）。結んだ予約番号を返す（無ければ None）。"""
     with conn:
+        return _redeem_rows(conn, code, at, handled_by)
+
+
+def redeem_coupon_with_visit(conn: sqlite3.Connection, code: str, at: str, handled_by: str) -> str:
+    """予約のあるお客様の来店とクーポンの利用を、1回で記録する（一緒に成功するか、一緒に失敗する）。"""
+    with conn:
         row = conn.execute("SELECT session_id FROM coupons WHERE code = ?", (code,)).fetchone()
         if not row:
             raise LedgerError("台帳に無いクーポンの番号です")
         if conn.execute("SELECT 1 FROM coupon_redemptions WHERE code = ?", (code,)).fetchone():
             raise LedgerError("このクーポンは使用済みです")
         r = _coupon_reservation(conn, row["session_id"])
-        reserve_no = r["reserve_no"] if r else None
+        if not r or _get(conn, r["reserve_no"])["status"] != "confirmed":
+            raise LedgerError("来店を記録できる予約がありません（クーポンだけを記録してください）")
+        _visit_rows(conn, r["reserve_no"], at, at, handled_by)
+        return _redeem_rows(conn, code, at, handled_by)
+
+
+def undo_coupon(conn: sqlite3.Connection, code: str, at: str, handled_by: str) -> None:
+    """間違えて押した「使った」を取り消す。取り消した記録は coupon_undos に残す（来店の記録はそのまま）。"""
+    with conn:
+        u = conn.execute("SELECT * FROM coupon_redemptions WHERE code = ?", (code,)).fetchone()
+        if not u:
+            raise LedgerError("このクーポンは、まだ使った記録がありません")
         conn.execute(
-            "INSERT INTO coupon_redemptions (code, redeemed_at, reserve_no, handled_by) VALUES (?, ?, ?, ?)",
-            (code, at, reserve_no, handled_by),
+            "INSERT INTO coupon_undos (code, redeemed_at, reserve_no, handled_by, undone_at, undone_by)"
+            " VALUES (?, ?, ?, ?, ?, ?)",
+            (code, u["redeemed_at"], u["reserve_no"], u["handled_by"], at, handled_by),
         )
+        conn.execute("DELETE FROM coupon_redemptions WHERE code = ?", (code,))
+
+
+def _redeem_rows(conn: sqlite3.Connection, code: str, at: str, handled_by: str) -> str | None:
+    row = conn.execute("SELECT session_id FROM coupons WHERE code = ?", (code,)).fetchone()
+    if not row:
+        raise LedgerError("台帳に無いクーポンの番号です")
+    if conn.execute("SELECT 1 FROM coupon_redemptions WHERE code = ?", (code,)).fetchone():
+        raise LedgerError("このクーポンは使用済みです")
+    r = _coupon_reservation(conn, row["session_id"])
+    reserve_no = r["reserve_no"] if r else None
+    conn.execute(
+        "INSERT INTO coupon_redemptions (code, redeemed_at, reserve_no, handled_by) VALUES (?, ?, ?, ?)",
+        (code, at, reserve_no, handled_by),
+    )
     return reserve_no
 
 
@@ -522,11 +566,15 @@ def record_visit(
 ) -> None:
     """来店を記録する。予約の状態の更新・履歴・来店の行は一緒に成功するか、一緒に失敗する。"""
     with conn:
-        _move(conn, reserve_no, "visited", recorded_at, handled_by)
-        conn.execute(
-            "INSERT INTO visits (reserve_no, visited_at, recorded_at) VALUES (?, ?, ?)",
-            (reserve_no, visited_at, recorded_at),
-        )
+        _visit_rows(conn, reserve_no, visited_at, recorded_at, handled_by)
+
+
+def _visit_rows(conn: sqlite3.Connection, reserve_no: str, visited_at: str, recorded_at: str, handled_by: str) -> None:
+    _move(conn, reserve_no, "visited", recorded_at, handled_by)
+    conn.execute(
+        "INSERT INTO visits (reserve_no, visited_at, recorded_at) VALUES (?, ?, ?)",
+        (reserve_no, visited_at, recorded_at),
+    )
 
 
 def cancel_visit(conn: sqlite3.Connection, reserve_no: str, at: str, handled_by: str) -> None:

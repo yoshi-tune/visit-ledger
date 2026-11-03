@@ -14,7 +14,7 @@ const DECISION = {
 /** @param {number | null | undefined} c */
 const usd = (c) => (c === null || c === undefined ? "—" : `$${(c / 100).toFixed(2)}`);
 /** @param {number | null | undefined} r */
-const rounds = (r) => (r ? `${r}回目で合格` : "合格せず");
+const rounds = (r) => (r ? `${r}回目で合格` : "3回で通らず");
 
 /** 分析担当の仕事の流れの図。変わる節に色、直せない節に鍵 @param {any[]} flow */
 function flowDiagram(flow) {
@@ -46,7 +46,7 @@ function metrics(b, c) {
     row("採点（仕込みなし）", rounds(b.noplant.rounds), c ? rounds(c.noplant.rounds) : "回している途中",
       c ? (c.noplant.rounds || 4) <= (b.noplant.rounds || 4) : null),
     row("日数の差を見つけたか（仕込みあり）", ok(b.plant.judge), c ? ok(c.plant.judge) : "—", c ? Boolean(c.plant.judge?.ok) : null),
-    row("無い差をでっち上げなかったか（仕込みなし）", ok(b.noplant.judge), c ? ok(c.noplant.judge) : "—", c ? Boolean(c.noplant.judge?.ok) : null),
+    row("偶然かもしれない差を言い切らなかったか（仕込みなし）", ok(b.noplant.judge), c ? ok(c.noplant.judge) : "—", c ? Boolean(c.noplant.judge?.ok) : null),
     row("費用（2つの台帳の合計）", usd(b.total_cost_cents), c ? usd(c.total_cost_cents) : "—",
       c && b.total_cost_cents && c.total_cost_cents !== null ? c.total_cost_cents <= b.total_cost_cents : null),
   ];
@@ -68,8 +68,8 @@ function diffView(diff) {
 function checks(b, c) {
   /** @param {any} j */
   const ok = (j) => (j ? (j.ok ? "○" : "×") : "—");
-  /** @param {any} e */
-  const tries = (e) => `${e.total_rounds}回${[e.plant, e.noplant].some((x) => !x.rounds) ? "（通らなかった台帳あり）" : ""}`;
+  /** 採点の何回目で合格したか（合格しないと4として比べる） @param {number | null | undefined} r */
+  const n = (r) => r || 4;
   /** @param {string} label @param {string} before @param {string} after @param {boolean | null} better */
   const row = (label, before, after, better) => el("tr", {}, [
     el("th", {}, [label]), el("td", {}, [before]), el("td", { "aria-hidden": "true" }, ["→"]),
@@ -77,8 +77,9 @@ function checks(b, c) {
   ]);
   const rows = [
     row("チラシが低く見える本当の理由（予約が先の日に多い）を見つけたか（台帳A）", ok(b.plant.judge), c ? ok(c.plant.judge) : "—", c ? Boolean(c.plant.judge?.ok) : null),
-    row("差の無い台帳で、無い差を言い切らなかったか（台帳B）", ok(b.noplant.judge), c ? ok(c.noplant.judge) : "—", c ? Boolean(c.noplant.judge?.ok) : null),
-    row("採点に通るまでに書いた回数（2つの台帳の合計・少ないほど良い）", tries(b), c ? tries(c) : "—", c ? c.total_rounds <= b.total_rounds : null),
+    row("差の無い台帳で、偶然かもしれない差を確かな差のように言い切らなかったか（台帳B）", ok(b.noplant.judge), c ? ok(c.noplant.judge) : "—", c ? Boolean(c.noplant.judge?.ok) : null),
+    row("採点に合格した回（台帳A・3回まで書き直せる）", rounds(b.plant.rounds), c ? rounds(c.plant.rounds) : "—", c ? n(c.plant.rounds) <= n(b.plant.rounds) : null),
+    row("採点に合格した回（台帳B・3回まで書き直せる）", rounds(b.noplant.rounds), c ? rounds(c.noplant.rounds) : "—", c ? n(c.noplant.rounds) <= n(b.noplant.rounds) : null),
     row("1回の確かめにかかった費用（2つの台帳の合計）", usd(b.total_cost_cents), c ? usd(c.total_cost_cents) : "—",
       c && b.total_cost_cents && c.total_cost_cents !== null ? c.total_cost_cents <= b.total_cost_cents : null),
   ];

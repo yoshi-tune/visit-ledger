@@ -204,20 +204,35 @@ def summarize(results: dict[str, dict]) -> dict:
     }
 
 
+def rounds_text(base: dict, cand: dict | None = None) -> str:
+    """台帳ごとの「採点の何回目で合格したか」（合計の点は合格しなかった台帳を4と数えるので、画面と理由には出さない）。"""
+    f = lambda r: f"{r}回目で合格" if r else "3回で通らず"
+    parts = []
+    for k, label in (("plant", "A"), ("noplant", "B")):
+        parts.append(f"台帳{label} {f(base[k].get('rounds'))}" + (f" → {f(cand[k].get('rounds'))}" if cand else ""))
+    return "・".join(parts)
+
+
 def decide(base: dict, cand: dict) -> tuple[str, str]:
-    """残すか戻すか。物差しの決まり（コード）だけで決める。"""
+    """残すか戻すか。物差しの決まり（コード）だけで決める。
+    残すには、報告の形・検算の一致・両方の台帳で採点に合格・中身の確かめ、のすべてを満たし、前の版より良いこと。"""
     if not cand["all_schema_ok"]:
         return "reverted", "報告の形が合わない回があった"
+    if not all(cand[k].get("matches") for k in ("plant", "noplant")):
+        return "reverted", "検算がアプリの集計と合わない台帳があった"
     if not cand["all_judge_ok"]:
-        return "reverted", "中身の確かめ（仕込みありで日数の差を見つける・仕込みなしででっち上げない）に通らなかった"
+        return "reverted", "中身の確かめ（台帳Aで本当の理由を見つける・台帳Bで偶然かもしれない差を確かな差のように言い切らない）に通らなかった"
+    if not all(cand[k].get("rounds") for k in ("plant", "noplant")):
+        return "reverted", f"採点に合格しなかった台帳があった（{rounds_text(base, cand)}）"
     if base["all_judge_ok"] is False:
         return "kept", "前の版は中身の確かめに通らず、新しい版は通った"
+    # 合計の点：採点の何回目で合格したかを足す（合格しなかった台帳は4と数える）。小さいほど良い
     if cand["total_rounds"] < base["total_rounds"]:
-        return "kept", f"採点の回数が減った（{base['total_rounds']} → {cand['total_rounds']}）"
+        return "kept", f"採点に合格するまでが短くなった（{rounds_text(base, cand)}）"
     bc, cc = base["total_cost_cents"], cand["total_cost_cents"]
     if cand["total_rounds"] == base["total_rounds"] and bc and cc is not None and cc <= bc * 0.9:
-        return "kept", f"採点の回数は同じで、費用が1割以上減った（${bc / 100:.2f} → ${cc / 100:.2f}）"
-    return "reverted", f"良くならなかった（採点の回数 {base['total_rounds']} → {cand['total_rounds']}）"
+        return "kept", f"採点に合格するまでは同じで、費用が1割以上減った（${bc / 100:.2f} → ${cc / 100:.2f}）"
+    return "reverted", f"良くならなかった（{rounds_text(base, cand)}）"
 
 
 # ---- 直す役 --------------------------------------------------------------------

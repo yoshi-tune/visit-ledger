@@ -294,12 +294,25 @@ def get_coupon(code: str, conn: sqlite3.Connection = Depends(get_conn)) -> dict:
     }
 
 
+class RedeemIn(StaffIn):
+    with_visit: bool = False  # 予約のあるお客様なら、来店も一緒に記録する
+
+
 @app.post("/api/coupons/{code}/redeem")
-def redeem_coupon(code: str, body: StaffIn, conn: sqlite3.Connection = Depends(get_conn)) -> dict:
+def redeem_coupon(code: str, body: RedeemIn, conn: sqlite3.Connection = Depends(get_conn)) -> dict:
     """店でクーポンを使った（受付が「使った」を押した時だけ。画面を開いただけでは記録しない）。"""
     c = _coupon_or_404(conn, code)
-    reserve_no = guard(ledger.redeem_coupon, conn, c["code"], fmt(config.now()), body.staff)
+    fn = ledger.redeem_coupon_with_visit if body.with_visit else ledger.redeem_coupon
+    reserve_no = guard(fn, conn, c["code"], fmt(config.now()), body.staff)
     return {"ok": True, "reserve_no": reserve_no}
+
+
+@app.post("/api/coupons/{code}/undo")
+def undo_coupon(code: str, body: StaffIn, conn: sqlite3.Connection = Depends(get_conn)) -> dict:
+    """間違えて押した「使った」を取り消す（来店の記録は受付の画面で取り消す）。"""
+    c = _coupon_or_404(conn, code)
+    guard(ledger.undo_coupon, conn, c["code"], fmt(config.now()), body.staff)
+    return {"ok": True}
 
 
 # ---- API：分析担当の改善 ----------------------------------------------------------

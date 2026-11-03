@@ -1,6 +1,7 @@
 // @ts-check
 // クーポンの受付：番号（または QR で開いた URL）からクーポンを確かめ、「使った」を押した時だけ記録する。
 // そのクーポンを出した LP のセッションに予約があれば、その予約と結ぶ（無ければ予約なしの来店）。
+// 予約のある人は来店とクーポンを1回で記録できる。間違えて押した「使った」は取り消せる（取り消した記録は台帳に残る）。
 import { api, byId, el, fmtDateTime, pageLoading, srcLabel, toast } from "./common.js";
 import { say } from "./mascot.js";
 
@@ -30,29 +31,50 @@ async function show(code) {
     ]),
   ]);
   const actions = el("div", { class: "row", style: "display:flex;gap:10px;flex-wrap:wrap;margin-top:12px" });
-  if (!used) {
-    const b = /** @type {HTMLButtonElement} */ (el("button", { class: "btn", type: "button" }, ["クーポンを使った（記録する）"]));
-    b.addEventListener("click", () => act(b, async () => {
+  /** @param {string} label @param {string} cls @param {() => Promise<void>} fn @param {string} [ask] 押す前に確かめる文 */
+  const button = (label, cls, fn, ask) => {
+    const b = /** @type {HTMLButtonElement} */ (el("button", { class: cls, type: "button" }, [label]));
+    b.addEventListener("click", () => { if (!ask || confirm(ask)) act(b, fn); });
+    actions.append(b);
+  };
+  const canVisit = Boolean(r && r.status === "confirmed");
+  if (!used && canVisit) {
+    // 予約のある人：来店とクーポンを1回で記録する（片方だけ押し忘れないように）
+    button("来店とクーポンを記録する", "btn", async () => {
+      await api(`/api/coupons/${encodeURIComponent(c.code)}/redeem`, { json: { staff, with_visit: true } });
+      toast("来店とクーポンの利用を記録しました");
+      await show(c.code);
+    });
+    button("クーポンだけ記録する", "btn ghost", async () => {
+      await api(`/api/coupons/${encodeURIComponent(c.code)}/redeem`, { json: { staff } });
+      toast("クーポンの利用を記録しました（来店はまだです）");
+      await show(c.code);
+    });
+  } else if (!used) {
+    button("クーポンを使った（記録する）", "btn", async () => {
       await api(`/api/coupons/${encodeURIComponent(c.code)}/redeem`, { json: { staff } });
       toast("クーポンの利用を記録しました");
       await show(c.code);
-    }));
-    actions.append(b);
-  }
-  if (r && r.status === "confirmed") {
-    // 予約のある人なら、来店の記録も同じ画面から付けられる（クーポンの記録とは別の操作）
-    const v = /** @type {HTMLButtonElement} */ (el("button", { class: "btn ghost", type: "button" }, ["この予約の来店も記録する"]));
-    v.addEventListener("click", () => act(v, async () => {
-      await api("/api/visits", { json: { staff, reserve_no: r.reserve_no } });
-      toast("来店を記録しました");
+    });
+  } else {
+    if (canVisit && r) {
+      button("この予約の来店も記録する", "btn", async () => {
+        await api("/api/visits", { json: { staff, reserve_no: r.reserve_no } });
+        toast("来店を記録しました");
+        await show(c.code);
+      });
+    }
+    // 間違えて押した時に、その場で戻せるように（取り消した記録は台帳に残る）
+    button("「使った」を取り消す", "btn ghost", async () => {
+      await api(`/api/coupons/${encodeURIComponent(c.code)}/undo`, { json: { staff } });
+      toast("「使った」を取り消しました");
       await show(c.code);
-    }));
-    actions.append(v);
+    }, "このクーポンの「使った」を取り消します。来店の記録は取り消しません（来店の取り消しは受付の画面から）。よいですか？");
   }
   card.append(actions);
   result.replaceChildren(card);
   byId("guide").replaceChildren(say(used ? "このクーポンは使用済みです。" : r
-    ? "予約のあるお客様です。クーポンを使ったら記録してくださいね。"
+    ? "予約のあるお客様です。来店とクーポンは、1回で一緒に記録できますよ。"
     : "予約なしで来たお客様です。どの施策で来たかが台帳に残ります。", used ? "think" : "happy"));
 }
 
