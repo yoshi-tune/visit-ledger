@@ -40,6 +40,8 @@ let extraTabs = [];
 /** 予約番号 → お知らせの記録 @type {Record<string, {at: string, result: string, handled_by: string}[]>} */
 let reminders = {};
 const REMINDER = { sent: "送った", replied: "返事あり", rescheduled: "日時を変えた" };
+/** 受付で押す記録（「日時を変えた」は「日時を変える」で変えた時に自動で残る） */
+const REMINDER_BUTTONS = { sent: "送った", replied: "返事あり" };
 /** @returns {typeof extraTabs[number] | undefined} */
 const currentExtra = () => extraTabs.find((t) => `x:${t.id}` === tab);
 let staff = sessionStorage.getItem("vl:staff") || "A";
@@ -94,17 +96,18 @@ function card(r) {
   const box = el("div", { class: "card rcard" }, [top, meta, actions]);
 
   const extra = currentExtra();
-  if (extra) {
-    // お知らせの結果を残す（実際には送らず、記録だけ）。日時そのものを変える時は下の「日時を変える」から
-    const done = reminders[r.reserve_no] || [];
-    if (done.length) {
-      const last = done[done.length - 1];
-      box.insertBefore(el("div", { class: "small muted" }, [
-        `お知らせ：${done.map((d) => REMINDER[/** @type {keyof typeof REMINDER} */ (d.result)] || d.result).join(" → ")}（最後 ${fmtDateTime(last.at)}・${last.handled_by}）`,
-      ]), actions);
-    }
-    for (const [result, label] of Object.entries(REMINDER)) {
-      actions.append(btn(label, () => act("/api/reminders", { reserve_no: r.reserve_no, result, desk_tab_id: extra.id },
+  // お知らせの記録は、どのタブからでも見える（翌日の返事も付けられる）
+  const done = reminders[r.reserve_no] || [];
+  if (done.length) {
+    const last = done[done.length - 1];
+    box.insertBefore(el("div", { class: "small muted" }, [
+      `お知らせ：${done.map((d) => REMINDER[/** @type {keyof typeof REMINDER} */ (d.result)] || d.result).join(" → ")}（最後 ${fmtDateTime(last.at)}・${last.handled_by}）`,
+    ]), actions);
+  }
+  // 記録のボタンは、足したタブでは予約中のカードに、他のタブでは記録が始まった予約中のカードに出す（実際には送らず、記録だけ）
+  if (r.status === "confirmed" && (extra || done.length)) {
+    for (const [result, label] of Object.entries(REMINDER_BUTTONS)) {
+      actions.append(btn(label, () => act("/api/reminders", { reserve_no: r.reserve_no, result, desk_tab_id: extra ? extra.id : null },
         `${r.customer_name} 様：「${label}」を記録しました`), "btn soft sm"));
     }
   }
@@ -134,7 +137,8 @@ function card(r) {
     /** @type {string | null} */
     let chosen = r.confirmed_for.slice(0, 16);
     const ok = /** @type {HTMLButtonElement} */ (btn("この日時に変える", () => {
-      if (chosen) act(`/api/reservations/${no}/reschedule`, { confirmed_for: chosen }, `${fmtDateTime(chosen)} に変えました`);
+      if (chosen) act(`/api/reservations/${no}/reschedule`, { confirmed_for: chosen, desk_tab_id: extra ? extra.id : null },
+        done.length ? `${fmtDateTime(chosen)} に変えました（お知らせに「日時を変えた」も記録）` : `${fmtDateTime(chosen)} に変えました`);
     }, "btn block"));
     ok.disabled = true;
     const picker = availabilityPicker({

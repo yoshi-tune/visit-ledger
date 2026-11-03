@@ -71,12 +71,12 @@
       "properties": {
         "had_reminders": {"type": "boolean"},
         "groups": {
-          "type": "array", "description": "送った／送らなかった／返事あり ごとの来店率（観測）",
+          "type": "array", "description": "送信記録あり／送信記録なし／うち返事あり ごとの来店率（観測）",
           "items": {
             "type": "object", "additionalProperties": false,
             "required": ["label", "visited", "denominator", "waiting", "steps"],
             "properties": {
-              "label": {"type": "string", "description": "送った・送らなかった・返事あり など"},
+              "label": {"type": "string", "description": "送信記録あり・送信記録なし・うち返事あり など"},
               "visited": {"type": "integer", "description": "来店（来店率の分子）"},
               "denominator": {"type": "integer", "description": "来店＋来店未記録（来店率の分母）"},
               "waiting": {"type": "integer", "description": "来店待ち（来店予定日がまだ来ていない）"},

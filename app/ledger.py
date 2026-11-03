@@ -572,9 +572,13 @@ def create_reservation(
 
 
 def reschedule(
-    conn: sqlite3.Connection, reserve_no: str, new_for: str, at: str, handled_by: str
+    conn: sqlite3.Connection, reserve_no: str, new_for: str, at: str, handled_by: str,
+    record_reminder: bool = False, desk_tab_id: str | None = None,
 ) -> None:
-    """日時を変える（お客様から連絡があった時など、店が受付で行う）。新しい日時の空きも確かめる。"""
+    """日時を変える（お客様から連絡があった時など、店が受付で行う）。新しい日時の空きも確かめる。
+
+    record_reminder が真で、その予約にお知らせの記録があれば、「日時を変えた」の記録も同じ取引で残す
+    （受付から変えた時だけ。見本の台帳を作る時は残さない）。"""
     conn.execute("BEGIN IMMEDIATE")
     try:
         row = _get(conn, reserve_no)
@@ -585,6 +589,9 @@ def reschedule(
         if row["status"] != "confirmed":
             raise LedgerError(f"{reserve_no}: {row['status']} の予約は日時を変えられません")
         _move(conn, reserve_no, "confirmed", at, handled_by, new_for)
+        if record_reminder and conn.execute("SELECT 1 FROM reminders WHERE reserve_no = ? LIMIT 1", (reserve_no,)).fetchone():
+            conn.execute("INSERT INTO reminders (reserve_no, at, result, handled_by, desk_tab_id) VALUES (?, ?, 'rescheduled', ?, ?)",
+                         (reserve_no, at, handled_by, desk_tab_id))
         conn.execute("COMMIT")
     except Exception:
         conn.execute("ROLLBACK")
@@ -931,6 +938,7 @@ def list_analysis_messages(conn: sqlite3.Connection, analysis_id: str) -> list[d
 EMPTY_SETTINGS = {"desk_tabs": []}
 CHANGE_COLUMNS = ("proposal_json", "status", "reason", "applied_version", "applied_by", "applied_at")
 REMINDER_RESULTS = ("sent", "replied", "rescheduled")
+REMINDER_MANUAL = ("sent", "replied")  # 受付で押す記録。rescheduled は日時を変えた時に reschedule が残す
 
 
 def current_settings(conn: sqlite3.Connection) -> tuple[int, dict]:
@@ -1013,8 +1021,8 @@ def _new_version(conn: sqlite3.Connection, settings: dict, at: str, request_id: 
 def add_reminder(conn: sqlite3.Connection, reserve_no: str, at: str, result: str, handled_by: str,
                  desk_tab_id: str | None) -> int:
     """前日のお知らせの結果を残す（今回は実際には送らず、記録だけ）。"""
-    if result not in REMINDER_RESULTS:
-        raise LedgerError(f"お知らせの結果の種類にありません: {result}")
+    if result not in REMINDER_MANUAL:
+        raise LedgerError(f"受付で押せるお知らせの結果ではありません: {result}（日時を変えた記録は、日時を変えると残ります）")
     with conn:
         _get(conn, reserve_no)
         cur = conn.execute("INSERT INTO reminders (reserve_no, at, result, handled_by, desk_tab_id) VALUES (?, ?, ?, ?, ?)",

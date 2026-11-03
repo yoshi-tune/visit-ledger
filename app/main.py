@@ -555,12 +555,14 @@ def reservation_public(reserve_no: str, conn: sqlite3.Connection = Depends(get_c
 
 class RescheduleIn(StaffIn):
     confirmed_for: str
+    desk_tab_id: str | None = None  # 開いていた足したタブ（お知らせの「日時を変えた」の記録に付ける）
 
 
 @app.post("/api/reservations/{reserve_no}/reschedule")
 def reschedule(reserve_no: str, body: RescheduleIn, conn: sqlite3.Connection = Depends(get_conn)) -> dict:
     """日時を変える（お客様から連絡があった時に店が行う）。新しい日時の空きもここで確かめる。"""
-    guard(ledger.reschedule, conn, reserve_no, normalize(body.confirmed_for), fmt(config.now()), body.staff)
+    guard(ledger.reschedule, conn, reserve_no, normalize(body.confirmed_for), fmt(config.now()), body.staff,
+          True, body.desk_tab_id)
     return {"ok": True}
 
 

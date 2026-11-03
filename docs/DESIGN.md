@@ -208,7 +208,7 @@ LP の「クーポン」（見本：点検 ¥500 引き）で、そのセッシ�
 | `improvements` | `id`, `created_at`, `iteration`, `status`, `decision`, `reason`, `base_system`, `candidate_system`, `proposal_json`, `eval_base_json`, `eval_cand_json`, `applied_at` | 分析担当の見直し：直しの案・物差しの結果・残したか戻したか・本番に使ったか |
 | `settings_versions` | `version`, `created_at`, `settings_json`, `change_request_id`, `note` | 受付に足したタブの設定の版（取り消しは、前の版の中身で新しい版を作る） |
 | `change_requests` | `id`, `created_at`, `requested_by`, `text`, `source_analysis_id`, `proposal_json`, `status`, `reason`, `applied_version`, `applied_by`, `applied_at` | ナットクに頼んだ記録（提案・反映・やめた・取り消した・捨てた） |
-| `reminders` | `id`, `reserve_no`, `at`, `result`, `handled_by`, `desk_tab_id` | 前日のお知らせの記録（`sent`・`replied`・`rescheduled`）。タブを外しても消さない |
+| `reminders` | `id`, `reserve_no`, `at`, `result`, `handled_by`, `desk_tab_id` | 前日のお知らせの記録（`sent`・`replied` は受付のカードで押す。`rescheduled` は記録のある予約の日時を受付で変えた時に同じ取引で残す）。`desk_tab_id` は足したタブから押した時だけ。タブを外しても消さない |
 
 決まり：
 
