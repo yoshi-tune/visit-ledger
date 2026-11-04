@@ -173,9 +173,14 @@ function card(it) {
 }
 
 async function load() {
-  const { items, max_grades: mg } = await api("/api/improvements");
+  const { items, max_grades: mg, sample } = await api("/api/improvements");
   if (mg) maxGrades = mg;
-  byId("list").replaceChildren(...items.map(card));
+  const list = items.map(card);
+  if (sample) {
+    // 見本の記録には「本番に使う」を出さない（この台帳で回した見直しではないため）
+    list.unshift(el("p", { class: "banner" }, ["見本の記録です。作者が鍵を入れて、答えの分かっている見本の台帳2つで本物の見直しを2回回した時の記録を、そのまま出しています（この台帳で回したものではありません）。"]));
+  }
+  byId("list").replaceChildren(...list);
   byId("guide").replaceChildren(items.length
     ? say("答えの分かっている見本の台帳で試して、良くなった時だけ残しています。報告の前と後を見て、使うか決めてくださいね。", "normal")
     : say("まだ見直しをしていません。見直しを回すと、ここに出ます。", "think"));

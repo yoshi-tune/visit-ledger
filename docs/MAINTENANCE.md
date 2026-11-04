@@ -92,10 +92,11 @@
 
 | 表 | 列 |
 |---|---|
-| `settings_versions` | `version`, `created_at`, `settings_json`（受付のタブの定義）, `change_request_id` |
-| `change_requests` | `id`, `created_at`, `requested_by`, `text`, `source_analysis_id`, `proposal_json`, `status`（proposed / applied / rejected / reverted）, `applied_version`, `applied_by` |
+| `settings_versions` | `version`, `created_at`, `settings_json`（受付のタブの定義）, `change_request_id`, `note` |
+| `change_requests` | `id`, `created_at`, `requested_by`, `text`, `source_analysis_id`, `proposal_json`, `status`（proposed / applied / rejected / reverted / failed）, `applied_version`, `applied_by` |
 | `reminders` | `id`, `reserve_no`, `at`, `result`, `handled_by`, `desk_tab_id`（どのタブから送ったか） |
-| `staff` | `staff_id`, `name`（見本）, `role`（owner / staff）, `pin_hash` |
+| `reminder_undos` | `id`, `reminder_id`, `reserve_no`, `at`, `result`, `handled_by`, `desk_tab_id`, `undone_at`, `undone_by`（取り消したお知らせの記録） |
+| `staff` | `staff_id`, `name`（見本）, `role`（owner / staff）, `pin_hash`（**まだ作っていない**。今は担当 A・B を選ぶだけ） |
 
 ## 7. 会話の見本
 
@@ -120,7 +121,7 @@
 
 ## 8. デモでの見せ方（案）
 
-効果の画面の「次の一手」→「ナットクに頼む」→ 条件と見本（3件）→ 反映 → 受付に「前日のお知らせ」のタブ → 1件に「つながった」を記録、を40秒ほどで見せる。
+効果の画面の「次の一手」→「ナットクに頼む」→ 条件と見本（3件）→ 反映 → 受付に「前日のお知らせ」のタブ → 3件に「送った」・1件に「返事あり」を記録、を40秒ほどで見せる。
 翌月の振り返りは見本のデータで示し、「見本です」と明記する（本物の効果とは言わない）。
 
 ## 9. 権限

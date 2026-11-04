@@ -490,7 +490,13 @@ def _improvement_view(row: dict) -> dict:
 def list_improvements(conn: sqlite3.Connection = Depends(get_conn)) -> dict:
     from app.analysis.agent_runner import MAX_GRADES
 
-    return {"items": [_improvement_view(r) for r in ledger.list_improvements(conn)], "max_grades": MAX_GRADES}
+    items = [_improvement_view(r) for r in ledger.list_improvements(conn)]
+    if items:
+        return {"items": items, "max_grades": MAX_GRADES, "sample": False}
+    # 台帳に見直しの記録が無い時（鍵が無い手元の起動など）は、作者が本物で回した記録を「見本の記録」として出す
+    sample = config.ROOT / "agent" / "sample_improvements.json"
+    data = json.loads(sample.read_text(encoding="utf-8")) if sample.exists() else {"items": []}
+    return {"items": data["items"], "max_grades": MAX_GRADES, "sample": bool(data["items"])}
 
 
 @app.post("/api/improvements/{improvement_id}/apply")
