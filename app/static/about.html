@@ -20,6 +20,20 @@
     .arrow { align-self: center; font-size: 2.75rem; color: var(--accent); }
     .handoff { margin-top: 28px; display: flex; gap: 20px; align-items: center; background: var(--surface-2); border-radius: 18px; padding: 18px 28px; font-size: 1.625rem; }
     .handoff b { color: var(--accent); }
+    /* お客様の道のり（主体ごとに色を分ける：お客様・店・アプリ／Claude。チラシ・LINE の2色とは別の色） */
+    .steps { display: grid; grid-template-columns: repeat(6, 1fr); gap: 40px; list-style: none; margin: 0; padding: 0; counter-reset: step; }
+    .step { position: relative; background: var(--surface); border: 1px solid var(--line); border-top: 8px solid var(--who); border-radius: 18px; padding: 20px 20px 24px; }
+    .step + .step::before { content: "→"; position: absolute; left: -36px; top: 50%; transform: translateY(-50%); font-size: 1.75rem; color: var(--muted); }
+    .step .actor { display: inline-block; background: var(--who); color: #fff; border-radius: 999px; padding: 6px 18px; font-size: 1.5rem; font-weight: 700; margin: 0 0 12px; }
+    .step p { margin: 0; font-size: 2rem; line-height: 1.5; }
+    .journey .lead { font-size: 1.875rem; }
+    .legend { margin: 36px 0 0; font-size: 1.75rem; display: flex; gap: 18px; align-items: center; flex-wrap: wrap; }
+    .legend .key { display: inline-flex; align-items: center; gap: 8px; color: var(--ink); }
+    .legend .key::before { content: ""; width: 22px; height: 22px; border-radius: 6px; background: var(--who); }
+    .who-guest { --who: #2f7d6d; }
+    .who-shop { --who: #8a5a00; }
+    .who-cloud { --who: #6b4fa0; }
+    .about + .about { padding-top: 60px; }
     /* 1920 より狭い画面（デモ動画は 1280×720 で撮って引き伸ばす）では、同じ並びのまま全体を縮める */
     @media (min-width: 861px) and (max-width: 1599px) { .about { zoom: calc(2 / 3); } }
     @media (max-width: 860px) {
@@ -29,12 +43,31 @@
       .role ol, .role ul, .handoff { font-size: 1.0625rem; }
       .role h2 { font-size: 1.5rem; }
       .arrow { transform: rotate(90deg); justify-self: center; }
+      .steps { grid-template-columns: 1fr; gap: 28px; }
+      .step + .step::before { content: "↓"; left: 50%; top: -28px; transform: translateX(-50%); font-size: 1.25rem; }
+      .step p { font-size: 1.0625rem; }
+      .journey .lead { font-size: 1.125rem; }
+      .step .actor { font-size: 1rem; }
+      .legend { font-size: 1rem; }
     }
   </style>
 </head>
 <body>
-  <main class="about">
+  <main class="about journey" id="journey">
     <h1>ナットク台帳のしくみ</h1>
+    <p class="lead muted">お客様がチラシを見てから店に来るまでを、1本の台帳でつなぎます。</p>
+    <ol class="steps">
+      <li class="step who-guest" id="step-qr"><span class="actor">お客様</span><p>チラシの QR から LP を開く（チラシの印つき）</p></li>
+      <li class="step who-guest" id="step-reserve"><span class="actor">お客様</span><p>クーポンを出し、予約する（その場で確定）</p></li>
+      <li class="step who-shop" id="step-desk"><span class="actor">店の受付</span><p>来店したら、番号を読んで1回押す</p></li>
+      <li class="step who-cloud" id="step-app"><span class="actor">アプリ</span><p>1本の台帳で、予約から来店までを数える</p></li>
+      <li class="step who-cloud" id="step-claude"><span class="actor">Claude</span><p>数え直して確かめ、見立てを出す</p></li>
+      <li class="step who-shop" id="step-manager"><span class="actor">店長</span><p>次に確かめる一手を決める</p></li>
+    </ol>
+    <p class="legend muted">色＝だれの作業か　<span class="key who-guest">お客様</span><span class="key who-shop">店</span><span class="key who-cloud">アプリ・Claude（クラウド）</span></p>
+  </main>
+  <main class="about">
+    <h2 style="font-size:2.25rem;margin:0 0 8px">役割の分け方</h2>
     <p class="lead muted">チラシや LINE から来店までを1本の台帳でつなぎ、役割を3つに分けています。</p>
     <div class="roles">
       <section class="role">
