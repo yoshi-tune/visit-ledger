@@ -34,6 +34,8 @@ class RunError(Exception):
 def start(conn, snapshot: dict, funnel: dict, model: str = config.DEFAULT_MODEL,
           force_sample: bool = False) -> dict:
     """force_sample：公開版の全体の上限などで、鍵があっても Claude を呼ばずに見本の報告を出す。"""
+    if force_sample and not SAMPLE_RUN.exists():
+        raise RunError("今は分析を頼めません（見本の報告もありません）。")
     files, id_map = export.build(snapshot)
     analysis_id = f"an_{uuid.uuid4().hex[:12]}"
     if (force_sample or not os.environ.get("ANTHROPIC_API_KEY")) and SAMPLE_RUN.exists():

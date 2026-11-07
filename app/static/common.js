@@ -16,6 +16,10 @@ export async function api(path, opts = {}) {
   }
   const res = await fetch(path, init);
   const body = await res.json().catch(() => ({}));
+  if (res.status === 401 && location.pathname !== "/login") {
+    // 公開版でログインの期限が切れた時：ログインの画面へ移り、入ったらこの画面に戻る
+    location.href = `/login?next=${encodeURIComponent(location.pathname + location.search)}`;
+  }
   if (!res.ok) {
     const detail = typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail);
     throw new Error(detail || `${res.status}`);

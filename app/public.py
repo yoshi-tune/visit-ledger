@@ -11,7 +11,9 @@ import hashlib
 import hmac
 import os
 import re
+import threading
 import time
+from collections import deque
 
 from app import config, ledger
 
@@ -22,7 +24,15 @@ LOGIN_DAYS = 7
 # 公開版で Claude に使ってよい額の合計（セント）。Anthropic Console のワークスペースの上限とは別の、アプリの側の歯止め
 TOTAL_BUDGET_CENTS = int(os.environ.get("VL_TOTAL_BUDGET_CENTS", "2000"))
 PROPOSAL_CENTS = 3  # タブの提案1回の目安（Sonnet で1回呼ぶ）
-QUESTION_CENTS = 30  # 続きの質問1つで見込む額（答えた後の額は分析の費用に入る）
+QUESTION_CENTS = 100  # 答えている途中の続きの質問1つで見込む額（答えた後の額は分析の費用に入る）
+
+# 上限の確かめと、分析・質問・提案の記録を続けて行うための錠（プロセスは1つなので、これで同時に押されてもすり抜けない）
+LOCK = threading.Lock()
+
+# ログインの失敗：10分のうちに20回を超えたら、しばらく受け付けない（総当たりを止める）
+_FAILURES: deque[float] = deque()
+_FAIL_WINDOW = 600
+_FAIL_MAX = 20
 
 
 def _secret() -> bytes:
@@ -30,6 +40,21 @@ def _secret() -> bytes:
     if PUBLIC and len(s) < 32:
         raise RuntimeError("公開版では VL_SESSION_SECRET（32文字以上）を設定してください")
     return s.encode()
+
+
+def _prune() -> None:
+    while _FAILURES and _FAILURES[0] < time.time() - _FAIL_WINDOW:
+        _FAILURES.popleft()
+
+
+def too_many_failures() -> bool:
+    _prune()
+    return len(_FAILURES) >= _FAIL_MAX
+
+
+def record_failure() -> None:
+    _prune()
+    _FAILURES.append(time.time())
 
 
 def check_password(user: str, password: str) -> bool:
@@ -54,7 +79,7 @@ def valid_token(token: str | None) -> bool:
         return False
     user, exp, sig = token.split("|")
     want = hmac.new(_secret(), f"{user}|{exp}".encode(), hashlib.sha256).hexdigest()
-    if not hmac.compare_digest(sig, want):
+    if not hmac.compare_digest(sig.encode(), want.encode()):  # 文字ではなくバイトで比べる（日本語などが入っても落ちない）
         return False
     return exp.isdigit() and int(exp) > time.time() and user == os.environ.get("VL_TEST_USER", "")
 
@@ -83,7 +108,7 @@ def is_open(method: str, path: str) -> bool:
 def committed_cents(conn) -> tuple[int, int]:
     """(使った額と、動いている分析に見込む額の合計, 動いている分析の数)。見本の報告は数えない。
     費用の記録が無い本物の分析は、1回の上限（VL_BUDGET_CENTS）を使ったとみなす（少なく数えないため）。"""
-    return ledger.public_spend(conn, config.BUDGET_CENTS, PROPOSAL_CENTS)
+    return ledger.public_spend(conn, config.BUDGET_CENTS, PROPOSAL_CENTS, QUESTION_CENTS)
 
 
 def refuse_analysis(conn) -> str | None:
@@ -106,3 +131,7 @@ def refuse_question(conn) -> str | None:
 
 def refuse_proposal(conn) -> bool:
     return PUBLIC and committed_cents(conn)[0] + PROPOSAL_CENTS > TOTAL_BUDGET_CENTS
+
+
+if PUBLIC:
+    _secret()  # 署名の鍵が足りなければ、起動の時に止める（画面ごとに 500 になって気づけない、を防ぐ）

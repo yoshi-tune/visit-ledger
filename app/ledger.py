@@ -917,7 +917,8 @@ def analysis_cost_summary(conn: sqlite3.Connection, default_model: str) -> list[
     return [dict(r) for r in rows]
 
 
-def public_spend(conn: sqlite3.Connection, budget_cents: int, proposal_cents: int) -> tuple[int, int]:
+def public_spend(conn: sqlite3.Connection, budget_cents: int, proposal_cents: int,
+                 question_cents: int) -> tuple[int, int]:
     """公開版の全体の上限のための (使った額と見込む額の合計, 動いている分析の数)。セント・目安。
     見本の報告は数えない。費用の記録が無い本物の分析と、動いている分析は、1回の上限を使ったとみなす。"""
     row = conn.execute(
@@ -931,10 +932,15 @@ def public_spend(conn: sqlite3.Connection, budget_cents: int, proposal_cents: in
         " FROM analysis_runs WHERE COALESCE(json_extract(report_json, '$.mode'), '') != 'sample'",
         (budget_cents, budget_cents),
     ).fetchone()
+    # 見本以外の提案は、失敗した回・作っている途中の回も数える（Claude を呼んだ後に失敗することがある）
     proposals = conn.execute(
-        "SELECT COUNT(*) FROM change_requests WHERE json_extract(proposal_json, '$.mode') = 'claude'"
+        "SELECT COUNT(*) FROM change_requests WHERE COALESCE(json_extract(proposal_json, '$.mode'), '') != 'sample'"
     ).fetchone()[0]
-    return int(row["cents"]) + proposals * proposal_cents, int(row["running"])
+    # 答えている途中の続きの質問は、まだ額が分析に入っていないので見込みで数える
+    pending = conn.execute(
+        "SELECT COUNT(*) FROM analysis_messages WHERE role = 'assistant' AND status = 'pending'"
+    ).fetchone()[0]
+    return int(row["cents"]) + proposals * proposal_cents + pending * question_cents, int(row["running"])
 
 
 def add_analysis_message(conn: sqlite3.Connection, analysis_id: str, at: str, role: str,

@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import io
 import json
 import secrets
@@ -45,17 +46,22 @@ app.mount("/static", StaticFiles(directory=STATIC), name="static")
 @app.middleware("http")
 async def login_gate(request, call_next):
     # 公開版だけ：ログインしていない人は、LP・予約・お客様のクーポンと、それらが使う API だけを開ける
-    if public.PUBLIC and not public.is_open(request.method, request.url.path)             and not public.valid_token(request.cookies.get(public.COOKIE)):
+    if public.PUBLIC and not public.is_open(request.method, request.url.path) \
+            and not public.valid_token(request.cookies.get(public.COOKIE)):
         if request.url.path.startswith("/api/"):
             return JSONResponse({"detail": "ログインしてください"}, status_code=401)
-        return RedirectResponse(f"/login?next={quote(request.url.path)}", status_code=303)
+        back = request.url.path + (f"?{request.url.query}" if request.url.query else "")
+        return RedirectResponse(f"/login?next={quote(back)}", status_code=303)
     return await call_next(request)
 
 
-@app.exception_handler(Exception)
 async def hide_errors(request, exc):
-    # 思わぬ失敗は、中身を出さずに決まった文だけを返す（中身はサーバーのログにだけ残る）
+    # 公開版だけ：思わぬ失敗は、中身を出さずに決まった文だけを返す（中身はサーバーのログにだけ残る）
     return JSONResponse({"detail": "うまくいきませんでした。少し待ってからもう一度試してください。"}, status_code=500)
+
+
+if public.PUBLIC:
+    app.add_exception_handler(Exception, hide_errors)
 
 
 @app.middleware("http")
@@ -116,13 +122,14 @@ def login_page() -> Response:
 
 
 @app.post("/api/login")
-def login(body: LoginIn) -> Response:
+async def login(body: LoginIn) -> Response:
     if not public.PUBLIC:
         raise HTTPException(404, "手元の起動にはログインはありません")
+    if public.too_many_failures():
+        raise HTTPException(429, "ログインの失敗が続いたので、しばらく受け付けません。10分ほど待ってください")
     if not public.check_password(body.user, body.password):
-        import time
-
-        time.sleep(1)  # 総当たりを遅らせる
+        public.record_failure()
+        await asyncio.sleep(1)  # 総当たりを遅らせる（ほかの人の処理は止めない）
         raise HTTPException(401, "ID かパスワードが違います")
     res = JSONResponse({"ok": True})
     res.set_cookie(public.COOKIE, public.make_token(body.user), max_age=public.LOGIN_DAYS * 86400,
@@ -429,9 +436,11 @@ def create_change(body: ChangeIn, conn: sqlite3.Connection = Depends(get_conn)) 
     if body.staff not in STAFF:
         raise HTTPException(400, "担当を選んでください")
     _, settings = ledger.current_settings(conn)
-    rid = ledger.add_change_request(conn, fmt(config.now()), body.staff, body.text.strip(), body.source_analysis_id)
+    with public.LOCK:  # 公開版の全体の上限：確かめと記録（見込みに数える）を続けて行う
+        force_sample = public.refuse_proposal(conn)
+        rid = ledger.add_change_request(conn, fmt(config.now()), body.staff, body.text.strip(), body.source_analysis_id)
     try:
-        proposal, mode = maintenance.propose(body.text.strip(), settings, force_sample=public.refuse_proposal(conn))
+        proposal, mode = maintenance.propose(body.text.strip(), settings, force_sample=force_sample)
         tab = maintenance.check_proposal(proposal, settings)
     except maintenance.ProposalError as e:
         ledger.update_change_request(conn, rid, status="failed", reason=f"提案を捨てました：{e}",
@@ -559,6 +568,8 @@ def apply_improvement(improvement_id: int, conn: sqlite3.Connection = Depends(ge
     """残した版を本番に使う（人が押した時だけ）。指示文のファイルを書き換え、エージェントの版を上げる。鍵が要る。"""
     from app import improve
 
+    if public.PUBLIC:
+        raise HTTPException(403, "公開版では、見直しの版を本番に使う操作は止めています（記録を見るだけです）")
     row = ledger.get_improvement(conn, improvement_id)
     if not row or row["decision"] != "kept":
         raise HTTPException(400, "物差しで残した版だけ本番に使えます")
@@ -701,8 +712,13 @@ def start_analysis(body: AnalysisIn | None = None,
     if model not in config.MODELS:
         raise HTTPException(400, f"選べないモデルです: {model}")
     snap, fun = current_funnel(conn)
-    notice = public.refuse_analysis(conn)  # 公開版の全体の上限・一度に1つまで。断る時は見本の報告を出す
-    return {**analysis.start(conn, snap, fun, model, force_sample=bool(notice)), "notice": notice}
+    with public.LOCK:  # 確かめと分析の記録（動いている分析に数える）を続けて行い、同時に押されてもすり抜けない
+        notice = public.refuse_analysis(conn)  # 公開版の全体の上限・一度に1つまで。断る時は見本の報告を出す
+        try:
+            started = analysis.start(conn, snap, fun, model, force_sample=bool(notice))
+        except analysis.RunError as e:
+            raise HTTPException(400, str(e)) from e
+    return {**started, "notice": notice}
 
 
 @app.get("/api/analysis-costs")
@@ -715,12 +731,13 @@ def analysis_costs(conn: sqlite3.Connection = Depends(get_conn)) -> dict:
 def ask_analysis(analysis_id: str, body: QuestionIn,
                  conn: sqlite3.Connection = Depends(get_conn)) -> dict:
     """分析の続きの質問（壁打ち）。同じエージェントのセッションに送り、答えは裏の処理で書く。"""
-    if refused := public.refuse_question(conn):
-        raise HTTPException(400, refused)
-    try:
-        return analysis.ask(conn, analysis_id, body.text)
-    except analysis.RunError as e:
-        raise HTTPException(400, str(e)) from e
+    with public.LOCK:  # 確かめと質問の記録（答えている途中の見込みに数える）を続けて行う
+        if refused := public.refuse_question(conn):
+            raise HTTPException(400, refused)
+        try:
+            return analysis.ask(conn, analysis_id, body.text)
+        except analysis.RunError as e:
+            raise HTTPException(400, str(e)) from e
 
 
 @app.get("/api/analysis/{analysis_id}")
