@@ -56,7 +56,8 @@ function journey(cs) {
 
 /** 次の一手から自動で作った提案の状態（人が反映するまでがループ。docs/LOOP.md） @param {any} p */
 function proposalLine(p) {
-  if (!p) return [el("p", { class: "loop-line wait" }, ["ナットクが、この次の一手から受付のタブの提案を作っています…（数秒）"])];
+  if (!p && latestTries < 6) return [el("p", { class: "loop-line wait" }, ["ナットクが、この次の一手から受付のタブの提案を作っています…（数秒）"])];
+  if (!p) return [el("a", { class: "loop-line todo", href: "/maintenance" }, ["この次の一手の提案はまだありません。次の一手の画面でナットクに頼めます →"])];
   if (p.status === "proposed") {
     return [el("a", { class: "loop-line todo", href: "/maintenance" }, [`人の番です：受付のタブ「${p.title}」の提案が反映待ちです →`])];
   }
@@ -82,7 +83,7 @@ function latestCard(run) {
   const href = `/analysis/${encodeURIComponent(run.analysis_id)}`;
   return [
     el("p", { class: "muted latest-meta" }, [
-      `${fmtDay(run.as_of)} の分析・${run.model_label}`,
+      `${fmtDay(run.as_of)} の分析（店全体の台帳）・${run.model_label}`,
       run.mode === "sample" ? "（見本の報告）" : "",
       run.matches === true ? "・✓ 検算：アプリの数字と一致" : "",
     ]),
@@ -141,9 +142,19 @@ async function loadFunnel() {
   byId("note").textContent = f.note;
   byId("period").textContent = `集計の対象：${fmtDay(f.period.from)} 〜 ${fmtDay(f.period.to)} に始まった LP のセッション`;
   byId("asof").textContent = `基準日 ${fmtDay(f.as_of)}`;
-  byId("kpis").replaceChildren(...kpis(f.campaigns));
-  byId("journey").replaceChildren(...journey(f.campaigns));
-  byId("funnels").replaceChildren(...f.campaigns.map(funnelCard));
+  // キャンペーン（施策の番号）ごとに、チラシと LINE を並べて見る。店の設定で足した施策は、ここで選ぶ
+  /** @type {Map<string, any[]>} */
+  const groups = new Map();
+  for (const c of f.campaigns) groups.set(c.campaign, [...(groups.get(c.campaign) || []), c]);
+  const wanted = new URLSearchParams(location.search).get("campaign") || "";
+  const sel = groups.has(wanted) ? wanted : [...groups.keys()][0];
+  const cs = groups.get(sel) || [];
+  byId("campaign-title").textContent = cs[0]?.title || "施策がありません";
+  byId("campaign-pick").replaceChildren(...(groups.size > 1 ? [...groups.entries()].map(([code, list]) =>
+    el("a", { class: "chip", href: `?campaign=${encodeURIComponent(code)}`, "aria-current": code === sel ? "true" : "false" }, [list[0].title])) : []));
+  byId("kpis").replaceChildren(...kpis(cs));
+  byId("journey").replaceChildren(...journey(cs));
+  byId("funnels").replaceChildren(...cs.map(funnelCard));
   byId("unknown").textContent = `施策が分からない分（道のりの数字には入れていません）：LP のセッション ${f.unknown.lp_sessions}・予約 ${f.unknown.reservations}`;
 }
 
@@ -212,10 +223,14 @@ ask.addEventListener("click", async () => {
   }
 });
 
+/** 自動の提案ができるのを待った回数（4秒ごと。6回で待つのをやめ、頼む画面へ案内する） */
+let latestTries = 0;
+
 async function refreshLatest() {
+  latestTries += 1;
   const latest = await api("/api/analysis-latest").catch(() => ({ run: null }));
   byId("latest").replaceChildren(...latestCard(latest.run));
-  if (latest.run && !latest.run.proposal) setTimeout(refreshLatest, 4000);
+  if (latest.run && !latest.run.proposal && latestTries < 6) setTimeout(refreshLatest, 4000);
 }
 
 async function main() {

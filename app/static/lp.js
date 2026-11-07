@@ -45,6 +45,17 @@ async function main() {
     b.addEventListener("click", () => go(m));
     list.append(b);
   }
+  // 施策の名前と期間（店の設定の画面で足した施策も、その名前で出す。見つからなければ秋の見本のまま）
+  if (campaign) {
+    try {
+      const c = await api(`/api/campaigns/${encodeURIComponent(campaign)}/public`);
+      if (c.title !== byId("title").textContent) byId("lead").textContent = "空いている日時を選ぶだけで、その場で予約が確定します。";
+      byId("title").textContent = c.title;
+      document.title = c.title;
+      const md = (/** @type {string} */ d) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`;
+      if (c.started_on && c.ended_on) byId("period").textContent = `${md(c.started_on)} 〜 ${md(c.ended_on)}`;
+    } catch { /* 見本のまま */ }
+  }
   if (!sessionId) {
     const s = await api("/api/sessions", { json: { store, campaign, src } });
     sessionId = /** @type {string} */ (s.session_id);

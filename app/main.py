@@ -682,7 +682,82 @@ def current_funnel(conn: sqlite3.Connection) -> tuple[dict, dict]:
 
 @app.get("/api/funnel")
 def get_funnel(conn: sqlite3.Connection = Depends(get_conn)) -> dict:
-    return current_funnel(conn)[1]
+    """効果の画面の数字。施策の名前と期間は画面のためだけに足す（分析に渡す集計は変えない）。"""
+    f = current_funnel(conn)[1]
+    meta = {c["campaign"]: c for c in ledger.list_campaigns(conn, config.STORE_ID)}
+    for c in f["campaigns"]:
+        m = meta.get(c["campaign"], {})
+        c.update(title=m.get("title") or c["campaign"], started_on=m.get("started_on"), ended_on=m.get("ended_on"))
+    return f
+
+
+# ---- API：施策を足す（チラシ・LINE の URL と QR） ------------------------------------
+
+SRC_NAMES = {"flyer": "チラシ", "line": "LINE"}
+
+
+class CampaignIn(BaseModel):
+    title: str = Field(min_length=1, max_length=30)
+    started_on: str
+    ended_on: str
+    distributed: dict[str, int | None]  # 媒体（flyer・line）→ 配る数（分からなければ null）
+
+
+def _lp_path(campaign: str, src: str) -> str:
+    return f"/lp/{config.STORE_ID}?campaign={campaign}&src={src}"
+
+
+@app.get("/api/campaigns")
+def list_campaigns(conn: sqlite3.Connection = Depends(get_conn)) -> dict:
+    out: dict[str, dict] = {}
+    for c in ledger.list_campaigns(conn, config.STORE_ID):
+        g = out.setdefault(c["campaign"], {"campaign": c["campaign"], "title": c["title"] or c["campaign"],
+                                           "started_on": c["started_on"], "ended_on": c["ended_on"], "media": []})
+        g["media"].append({"src": c["src"], "label": SRC_NAMES.get(c["src"], c["src"]),
+                           "distributed": c["distributed"], "lp_path": _lp_path(c["campaign"], c["src"])})
+    return {"campaigns": list(out.values())}
+
+
+@app.post("/api/campaigns")
+def create_campaign(body: CampaignIn, conn: sqlite3.Connection = Depends(get_conn)) -> dict:
+    """施策を足す：媒体ごとの LP の URL ができる（QR は下の道で出す）。番号はアプリが付ける。"""
+    try:
+        start, end = date.fromisoformat(body.started_on), date.fromisoformat(body.ended_on)
+    except ValueError as e:
+        raise HTTPException(400, "期間の日付が読めません") from e
+    if start > end:
+        raise HTTPException(400, "期間の終わりが始まりより前です")
+    srcs = {k: v for k, v in body.distributed.items() if k in SRC_NAMES}
+    if not srcs or len(srcs) != len(body.distributed):
+        raise HTTPException(400, "媒体はチラシか LINE を選んでください")
+    if any(v is not None and not 0 <= v <= 1_000_000 for v in srcs.values()):
+        raise HTTPException(400, "配る数は 0〜1,000,000 です")
+    prefix = f"c{config.TODAY:%Y%m%d}_"
+    code = prefix + str(ledger.count_campaigns_on(conn, config.STORE_ID, prefix) + 1)
+    guard(ledger.create_campaign, conn, code, body.title.strip(), config.STORE_ID, srcs, start.isoformat(), end.isoformat())
+    return {"campaign": code}
+
+
+@app.get("/api/campaigns/{campaign}/public")
+def campaign_public(campaign: str, conn: sqlite3.Connection = Depends(get_conn)) -> dict:
+    """LP に出す施策の名前と期間だけ（ログインなしで開ける）。"""
+    c = next((c for c in ledger.list_campaigns(conn, config.STORE_ID) if c["campaign"] == campaign), None)
+    if not c:
+        raise HTTPException(404, "施策がありません")
+    return {"title": c["title"] or c["campaign"], "started_on": c["started_on"], "ended_on": c["ended_on"]}
+
+
+@app.get("/api/campaigns/{campaign}/{src}/qr.svg", include_in_schema=False)
+def campaign_qr(campaign: str, src: str, request: Request, conn: sqlite3.Connection = Depends(get_conn)) -> Response:
+    """チラシに刷る・LINE に貼る QR。中身は LP の URL だけ。"""
+    import segno
+
+    if not any(c["campaign"] == campaign and c["src"] == src for c in ledger.list_campaigns(conn, config.STORE_ID)):
+        raise HTTPException(404, "施策がありません")
+    url = str(request.base_url).rstrip("/") + _lp_path(campaign, src)
+    buf = io.BytesIO()
+    segno.make(url, error="m").save(buf, kind="svg", scale=6, border=2, dark="#1f1a17", light="#ffffff")
+    return Response(buf.getvalue(), media_type="image/svg+xml")
 
 
 class AnalysisIn(BaseModel):

@@ -592,3 +592,19 @@ details > summary { cursor: pointer; font-weight: 700; color: var(--ink-2); padd
 .loop-line.todo { background: var(--warn-soft); color: var(--warn); }
 .loop-line.done { background: var(--good-soft); color: var(--good); }
 .loop-line.wait { font-weight: 400; color: var(--muted); }
+/* 店の設定：施策を始める */
+.campaign-card { margin-bottom: 16px; }
+.campaign-form { display: grid; gap: 4px; max-width: 640px; }
+.campaign-dates { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.campaign-media { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px 12px; align-items: center; margin: 0 0 8px; }
+.campaign-media legend { font-weight: 700; font-size: 0.875rem; padding: 0 4px; }
+.campaign-list { display: grid; gap: 12px; margin-top: 16px; }
+.campaign-item { border-top: 1px solid var(--line); padding-top: 12px; display: grid; gap: 10px; }
+.campaign-head { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; }
+.campaign-media-list { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+.campaign-medium { display: flex; gap: 12px; align-items: flex-start; background: var(--surface-2); border-radius: 12px; padding: 10px; }
+.campaign-medium img { background: #fff; border-radius: 8px; flex: 0 0 auto; }
+.campaign-url { word-break: break-all; }
+.campaign-pick { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.campaign-pick .chip { text-decoration: none; }
+.campaign-pick .chip[aria-current="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }

@@ -13,6 +13,25 @@
   </header>
   <main class="app-main">
     <div id="guide"></div>
+    <section class="card campaign-card" id="campaigns-card">
+      <h2>施策を始める（チラシ・LINE の URL と QR）</h2>
+      <p class="muted">キャンペーンの名前と期間を入れて足すと、媒体ごとの LP の URL と QR ができます。チラシに QR を刷り、LINE には URL を貼ってください。この URL から開いた人の予約・来店は、効果の画面でこの施策として数えます。</p>
+      <form id="campaign-form" class="campaign-form">
+        <label class="field"><span>キャンペーンの名前</span><input id="c-title" class="input" maxlength="30" required placeholder="例：冬のタイヤ交換キャンペーン"></label>
+        <div class="campaign-dates">
+          <label class="field"><span>始まり</span><input id="c-start" class="input" type="date" required></label>
+          <label class="field"><span>終わり</span><input id="c-end" class="input" type="date" required></label>
+        </div>
+        <fieldset class="campaign-media">
+          <legend>媒体と配る数（配る数は参考。分からなければ空のまま）</legend>
+          <label><input type="checkbox" id="c-flyer" checked> チラシ</label><input id="c-flyer-n" class="input" type="number" min="0" placeholder="配る枚数" aria-label="チラシの配る枚数">
+          <label><input type="checkbox" id="c-line" checked> LINE</label><input id="c-line-n" class="input" type="number" min="0" placeholder="送る人数" aria-label="LINE の送る人数">
+        </fieldset>
+        <p id="c-error" class="input-error"></p>
+        <button class="btn" type="submit">施策を足して、URL と QR を出す</button>
+      </form>
+      <div id="campaign-list" class="campaign-list"></div>
+    </section>
     <div class="two">
       <section class="card">
         <h2>時間帯と、受けられる台数</h2>
@@ -47,5 +66,6 @@
     </div>
   </main>
   <script type="module" src="/static/settings.js"></script>
+  <script type="module" src="/static/campaigns.js"></script>
 </body>
 </html>

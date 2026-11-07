@@ -273,6 +273,10 @@ def upgrade_schema(conn: sqlite3.Connection) -> None:
         conn.executescript(_COUPON_TABLES)
         conn.executescript(_IMPROVEMENT_TABLE)
         conn.executescript(_MAINTENANCE_TABLES)
+        # 施策の名前（11/7。施策を足す画面で付ける。前の台帳は秋の見本だけなので、その名前を入れる）
+        if "title" not in {r["name"] for r in conn.execute("PRAGMA table_info(campaigns)")}:
+            conn.execute("ALTER TABLE campaigns ADD COLUMN title TEXT")
+        conn.execute("UPDATE campaigns SET title = '秋の点検キャンペーン' WHERE title IS NULL AND campaign = 'autumn_check_202610'")
 
 
 # ---- 店と施策 -------------------------------------------------------------
@@ -285,6 +289,30 @@ def add_store(conn: sqlite3.Connection, store_id: str, name: str) -> None:
             "INSERT INTO campaigns (campaign, src, store_id) VALUES (?, ?, ?)",
             (UNKNOWN, UNKNOWN, store_id),
         )
+
+
+def create_campaign(conn: sqlite3.Connection, campaign: str, title: str, store_id: str,
+                    distributed: dict[str, int | None], started_on: str, ended_on: str) -> None:
+    """施策を足す画面から：媒体ごとに1行。同じ施策の番号があれば断る。"""
+    if conn.execute("SELECT 1 FROM campaigns WHERE campaign = ? AND store_id = ?", (campaign, store_id)).fetchone():
+        raise LedgerError("同じ番号の施策があります")
+    with conn:
+        for src, n in distributed.items():
+            conn.execute(
+                "INSERT INTO campaigns (campaign, src, store_id, distributed, started_on, ended_on, title)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (campaign, src, store_id, n, started_on, ended_on, title),
+            )
+
+
+def list_campaigns(conn: sqlite3.Connection, store_id: str) -> list[dict]:
+    return _rows(conn, "SELECT * FROM campaigns WHERE store_id = ? AND campaign != ? ORDER BY started_on, campaign, src",
+                 (store_id, UNKNOWN))
+
+
+def count_campaigns_on(conn: sqlite3.Connection, store_id: str, prefix: str) -> int:
+    return conn.execute("SELECT COUNT(DISTINCT campaign) FROM campaigns WHERE store_id = ? AND campaign LIKE ?",
+                        (store_id, prefix + "%")).fetchone()[0]
 
 
 def add_campaign(

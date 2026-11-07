@@ -92,7 +92,7 @@ _OPEN = [
     ("GET", r"/api/config"), ("GET", r"/api/availability"),
     ("POST", r"/api/sessions"), ("POST", r"/api/events"), ("POST", r"/api/coupons"),
     ("GET", r"/api/coupons/[^/]+/public"), ("GET", r"/api/coupons/[^/]+/qr\.svg"),
-    ("POST", r"/api/reservations"), ("GET", r"/api/reservations/[^/]+/public"),
+    ("POST", r"/api/reservations"), ("GET", r"/api/reservations/[^/]+/public"), ("GET", r"/api/campaigns/[^/]+/public"),
     ("GET", r"/about"),  # Render の死活の確かめに使う（台帳の中身は出さない画面）
 ]
 _OPEN_RE = [(m, re.compile(p + r"/?")) for m, p in _OPEN]
