@@ -8,7 +8,10 @@ const error = /** @type {HTMLElement} */ (document.getElementById("error"));
 /** 開こうとしていた画面。この店のアプリの中の道だけに限る（外のサイトへは移さない）。無ければ受付（README の順：受付 → 効果） */
 function nextPath() {
   const next = new URLSearchParams(location.search).get("next") || "";
-  return next.startsWith("/") && !next.startsWith("//") && !next.startsWith("/\\") ? next : "/desk";
+  if (!next.startsWith("/")) return "/desk";
+  // 「/<タブ>/外のサイト」のような形も、ブラウザーは外のサイトとして読むので、読んだ後の行き先で確かめる
+  const url = new URL(next, location.origin);
+  return url.origin === location.origin ? url.pathname + url.search + url.hash : "/desk";
 }
 
 form.addEventListener("submit", async (ev) => {

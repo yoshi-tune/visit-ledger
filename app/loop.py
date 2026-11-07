@@ -22,12 +22,13 @@ class ProposalCallError(Exception):
     """ナットク（Claude）を呼べなかった（通信・鍵など）。記録は「失敗」で残してある。"""
 
 
-def propose(conn, requested_by: str, text: str, source_analysis_id: str | None) -> int:
+def propose(conn, requested_by: str, text: str, source_analysis_id: str | None, sample: bool = False) -> int:
     """依頼の文から、受付のタブの提案を作って記録する（反映はしない）。記録の番号を返す。
-    部品から外れた案は捨て、部品で表せない依頼は「やめた」で残す（理由つき）。"""
+    部品から外れた案は捨て、部品で表せない依頼は「やめた」で残す（理由つき）。
+    sample=True は Claude を呼ばず、見本の提案を使う（見本の分析の後の自動の提案）。"""
     _, settings = ledger.current_settings(conn)
     with public.LOCK:  # 公開版の全体の上限：確かめと記録（見込みに数える）を続けて行う
-        force_sample = public.refuse_proposal(conn)
+        force_sample = sample or public.refuse_proposal(conn)
         rid = ledger.add_change_request(conn, config.now().strftime("%Y-%m-%dT%H:%M:%S"), requested_by, text,
                                         source_analysis_id)
     mode = None
@@ -59,7 +60,8 @@ def after_analysis(analysis_id: str) -> None:
         text = maintenance.draft_text(report.get("next_action"))
         if not text or ledger.change_request_for_analysis(conn, analysis_id):
             return
-        propose(conn, AUTO_BY, text, analysis_id)
+        # 見本の報告の分析（鍵が無い・ほかの分析が動いている時）の後は、提案も見本にする（Claude を呼ばない。連打で費用を使わせない）
+        propose(conn, AUTO_BY, text, analysis_id, sample=report.get("mode") == "sample")
     except Exception:  # 裏の処理。提案が作れなくても、分析の報告はそのまま使える
         traceback.print_exc()
     finally:

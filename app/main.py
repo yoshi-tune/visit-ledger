@@ -65,12 +65,24 @@ if public.PUBLIC:
     app.add_exception_handler(Exception, hide_errors)
 
 
+DAYS_AHEAD = 14  # お客様が予約できるのは「今日」から何日分か（画面とサーバーの両方で使う）
+MAX_BODY = 64 * 1024  # 送られてくる本文の上限（この店のアプリの依頼は、どれも数 KB まで）
+
+
 @app.middleware("http")
 async def no_stale_pages(request, call_next):
-    # 画面と JS・CSS は毎回確かめてから使わせる（古い画面と新しい JS が混ざらないように）
+    # 大きすぎる本文は読む前に断る（ログインなしで送れる予約・LP の道があるため）
+    size = request.headers.get("content-length")
+    if size is not None and (not size.isdigit() or int(size) > MAX_BODY):
+        return JSONResponse({"detail": "送られた中身が大きすぎます"}, status_code=413)
     response = await call_next(request)
+    # 画面と JS・CSS は毎回確かめてから使わせる（古い画面と新しい JS が混ざらないように）
     if not request.url.path.startswith("/api/"):
         response.headers["Cache-Control"] = "no-cache"
+    # 守りのヘッダー：ほかのサイトの枠に入れさせない・ファイルの種類を決めつけさせない・行き先に道を渡さない
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Referrer-Policy"] = "same-origin"
     return response
 
 
@@ -123,13 +135,14 @@ def login_page() -> Response:
 
 
 @app.post("/api/login")
-async def login(body: LoginIn) -> Response:
+async def login(body: LoginIn, request: Request) -> Response:
     if not public.PUBLIC:
         raise HTTPException(404, "手元の起動にはログインはありません")
-    if public.too_many_failures():
+    who = public.client_key(request)
+    if public.too_many_failures(who):
         raise HTTPException(429, "ログインの失敗が続いたので、しばらく受け付けません。10分ほど待ってください")
     if not public.check_password(body.user, body.password):
-        public.record_failure()
+        public.record_failure(who)
         await asyncio.sleep(1)  # 総当たりを遅らせる（ほかの人の処理は止めない）
         raise HTTPException(401, "ID かパスワードが違います")
     res = JSONResponse({"ok": True})
@@ -226,7 +239,7 @@ def get_config(conn: sqlite3.Connection = Depends(get_conn)) -> dict:
         "today": config.TODAY.isoformat(),
         "store": store,
         "menus": list(ledger.MENUS),
-        "days_ahead": 14,  # お客様が予約できるのは「今日」から何日先まで
+        "days_ahead": DAYS_AHEAD,  # お客様が予約できるのは「今日」から何日先まで
         "staff": list(STAFF),
         "weekdays": list(ledger.WEEKDAYS),
         "period": {"from": config.PERIOD_FROM.isoformat(), "to": config.PERIOD_TO.isoformat()},
@@ -280,9 +293,9 @@ def put_master(body: MasterIn, conn: sqlite3.Connection = Depends(get_conn)) -> 
 # ---- API：LP とセッション -------------------------------------------------------
 
 class SessionIn(BaseModel):
-    store: str
-    campaign: str | None = None
-    src: str | None = None
+    store: str = Field(max_length=40)
+    campaign: str | None = Field(default=None, max_length=60)
+    src: str | None = Field(default=None, max_length=30)
 
 
 @app.post("/api/sessions")
@@ -297,8 +310,8 @@ def create_session(body: SessionIn, conn: sqlite3.Connection = Depends(get_conn)
 
 
 class EventIn(BaseModel):
-    session_id: str
-    name: str
+    session_id: str = Field(max_length=40)
+    name: str = Field(max_length=40)
 
 
 @app.post("/api/events")
@@ -315,7 +328,7 @@ COUPON_CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"  # 見分けにくい字（0/O�
 
 
 class CouponIn(BaseModel):
-    session_id: str
+    session_id: str = Field(max_length=40)
 
 
 @app.post("/api/coupons")
@@ -584,16 +597,22 @@ def apply_improvement(improvement_id: int, conn: sqlite3.Connection = Depends(ge
 # ---- API：予約 -----------------------------------------------------------------
 
 class ReservationIn(BaseModel):
-    session_id: str
-    submit_key: str = Field(min_length=8)
-    menu: str
-    reserved_for: str
-    customer_name: str = Field(min_length=1)
-    customer_phone: str = Field(min_length=1)
+    # ログインなしで送れる所なので、長さの上限をすべてに付ける（とても長い文字で台帳と受付の画面を重くさせない）
+    session_id: str = Field(max_length=40)
+    submit_key: str = Field(min_length=8, max_length=64)
+    menu: str = Field(max_length=40)
+    reserved_for: str = Field(max_length=32)
+    customer_name: str = Field(min_length=1, max_length=40)
+    customer_phone: str = Field(min_length=1, max_length=20)
 
 
 @app.post("/api/reservations")
 def create_reservation(body: ReservationIn, conn: sqlite3.Connection = Depends(get_conn)) -> dict:
+    # 予約できるのは「今日」から DAYS_AHEAD 日分だけ（画面の側だけでなく、ここでも確かめる）
+    day = normalize(body.reserved_for)[:10]
+    last = date.fromordinal(config.TODAY.toordinal() + DAYS_AHEAD - 1).isoformat()
+    if not config.TODAY.isoformat() <= day <= last:
+        raise HTTPException(400, f"予約できるのは {last} までです")
     no = f"R{secrets.randbelow(900000) + 100000}"
     while ledger.get_reservation(conn, no):
         no = f"R{secrets.randbelow(900000) + 100000}"

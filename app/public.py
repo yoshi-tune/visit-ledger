@@ -29,10 +29,42 @@ QUESTION_CENTS = 100  # 答えている途中の続きの質問1つで見込む�
 # 上限の確かめと、分析・質問・提案の記録を続けて行うための錠（プロセスは1つなので、これで同時に押されてもすり抜けない）
 LOCK = threading.Lock()
 
-# ログインの失敗：10分のうちに20回を超えたら、しばらく受け付けない（総当たりを止める）
-_FAILURES: deque[float] = deque()
+# ログインの失敗：相手ごとに10分のうち10回、全体で10分のうち200回まで（総当たりを止める）。
+# 全体で1つだけにすると、誰かがわざと20回まちがえるだけで、審査員も入れなくなるため相手ごとに分けた。
+# 全体の上限は、相手を偽って数を逃れる総当たりへの歯止め（高めにして、ふつうの人が締め出されにくくする）
+_FAILURES: dict[str, deque[float]] = {}
+_ALL_FAILURES: deque[float] = deque()
 _FAIL_WINDOW = 600
-_FAIL_MAX = 20
+_FAIL_MAX = 10
+_FAIL_MAX_ALL = 200
+
+
+def client_key(request) -> str:
+    """相手の見分け。Render の前の Cloudflare が付ける CF-Connecting-IP（お客様の側では書き換えられない）を先に使い、
+    無ければ接続元。X-Forwarded-For の先頭はお客様が書けるので使わない。"""
+    return (request.headers.get("cf-connecting-ip") or request.headers.get("true-client-ip")
+            or (request.client.host if request.client else "") or "?")[:64]
+
+
+def _prune(q: deque[float]) -> None:
+    while q and q[0] < time.time() - _FAIL_WINDOW:
+        q.popleft()
+
+
+def too_many_failures(who: str) -> bool:
+    _prune(_ALL_FAILURES)
+    q = _FAILURES.get(who)
+    if q is not None:
+        _prune(q)
+    return len(_ALL_FAILURES) >= _FAIL_MAX_ALL or (q is not None and len(q) >= _FAIL_MAX)
+
+
+def record_failure(who: str) -> None:
+    if len(_FAILURES) > 5000:  # 相手の数が増えすぎたら、古い記録だけの相手を捨てる（メモリを膨らませない）
+        for k in [k for k, q in _FAILURES.items() if not q or q[-1] < time.time() - _FAIL_WINDOW]:
+            del _FAILURES[k]
+    _FAILURES.setdefault(who, deque()).append(time.time())
+    _ALL_FAILURES.append(time.time())
 
 
 def _secret() -> bytes:
@@ -40,21 +72,6 @@ def _secret() -> bytes:
     if PUBLIC and len(s) < 32:
         raise RuntimeError("公開版では VL_SESSION_SECRET（32文字以上）を設定してください")
     return s.encode()
-
-
-def _prune() -> None:
-    while _FAILURES and _FAILURES[0] < time.time() - _FAIL_WINDOW:
-        _FAILURES.popleft()
-
-
-def too_many_failures() -> bool:
-    _prune()
-    return len(_FAILURES) >= _FAIL_MAX
-
-
-def record_failure() -> None:
-    _prune()
-    _FAILURES.append(time.time())
 
 
 def check_password(user: str, password: str) -> bool:
