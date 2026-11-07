@@ -87,7 +87,7 @@ def normalize(value: str) -> str:
         raise HTTPException(400, f"日時の形が読めません: {value}") from e
 
 
-STAFF = ("A", "B")  # 見本の担当（権限と暗証番号は、まだ作っていない）
+STAFF = ("A", "B")  # 見本の担当（店の人ごとの権限と暗証番号は、まだ作っていない。公開版のログインは app/public.py）
 
 
 class StaffIn(BaseModel):
