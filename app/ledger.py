@@ -364,7 +364,10 @@ def set_master(conn: sqlite3.Connection, store_id: str, slots: list[dict],
         if not 0 <= int(w) <= 6:
             raise LedgerError(f"曜日が読めません: {w}")
     for d in closed_dates:
-        date.fromisoformat(d["day"])
+        try:
+            date.fromisoformat(d["day"])
+        except (ValueError, TypeError) as e:
+            raise LedgerError(f"休みの日付が読めません: {d['day']}") from e
     with conn:
         conn.execute("DELETE FROM slot_rules WHERE store_id = ?", (store_id,))
         conn.execute("DELETE FROM closed_weekdays WHERE store_id = ?", (store_id,))
@@ -513,12 +516,14 @@ def get_coupon(conn: sqlite3.Connection, code: str) -> dict | None:
 def redeem_coupon(conn: sqlite3.Connection, code: str, at: str, handled_by: str) -> str | None:
     """クーポンを店で使ったと記録する（1つの番号で1回だけ）。結んだ予約番号を返す（無ければ None）。"""
     with conn:
+        conn.execute("BEGIN IMMEDIATE")  # 読んで確かめてから書くので、先に書き込みの鍵を取る（同時に押された時の二重を防ぐ）
         return _redeem_rows(conn, code, at, handled_by)
 
 
 def redeem_coupon_with_visit(conn: sqlite3.Connection, code: str, at: str, handled_by: str) -> str:
     """予約のあるお客様の来店とクーポンの利用を、1回で記録する（一緒に成功するか、一緒に失敗する）。"""
     with conn:
+        conn.execute("BEGIN IMMEDIATE")
         row = conn.execute("SELECT session_id FROM coupons WHERE code = ?", (code,)).fetchone()
         if not row:
             raise LedgerError("台帳に無いクーポンの番号です")
@@ -534,6 +539,7 @@ def redeem_coupon_with_visit(conn: sqlite3.Connection, code: str, at: str, handl
 def undo_coupon(conn: sqlite3.Connection, code: str, at: str, handled_by: str) -> None:
     """間違えて押した「使った」を取り消す。取り消した記録は coupon_undos に残す（来店の記録はそのまま）。"""
     with conn:
+        conn.execute("BEGIN IMMEDIATE")
         u = conn.execute("SELECT * FROM coupon_redemptions WHERE code = ?", (code,)).fetchone()
         if not u:
             raise LedgerError("このクーポンは、まだ使った記録がありません")
@@ -576,11 +582,6 @@ def create_reservation(
 ) -> str:
     """予約を作る（その場で確定）。施策はセッションから写す。同じ送信キーなら既存の予約番号を返す。
     空き枠と休みは、書き込むのと同じトランザクションの中で確かめる（2人が同時に最後の1枠を取らないように）。"""
-    existing = conn.execute(
-        "SELECT reserve_no FROM reservations WHERE submit_key = ?", (submit_key,)
-    ).fetchone()
-    if existing:
-        return existing["reserve_no"]
     if menu not in MENUS:
         raise LedgerError(f"メニューの表に無い名前です: {menu}")
     session = conn.execute(
@@ -592,6 +593,13 @@ def create_reservation(
         raise LedgerError("過ぎた日には予約できません")
     conn.execute("BEGIN IMMEDIATE")
     try:
+        # 同じ送信キーの確かめも鍵を取った後に行う（同じ送信が同時に2回届いても、1件だけ作って同じ番号を返す）
+        existing = conn.execute(
+            "SELECT reserve_no FROM reservations WHERE submit_key = ?", (submit_key,)
+        ).fetchone()
+        if existing:
+            conn.execute("COMMIT")
+            return existing["reserve_no"]
         _check_slot(conn, session["store_id"], reserved_for)
         conn.execute(
             "INSERT INTO reservations (reserve_no, submit_key, session_id, campaign, src, store_id,"
@@ -1071,9 +1079,15 @@ def list_change_requests(conn: sqlite3.Connection) -> list[dict]:
     return _rows(conn, "SELECT * FROM change_requests ORDER BY id DESC")
 
 
-def apply_change(conn: sqlite3.Connection, request_id: int, settings: dict, at: str, applied_by: str) -> int:
-    """提案した設定を新しい版として保存し、頼んだ記録を「反映した」にする（一緒に成功するか、一緒に失敗する）。"""
+def apply_change(conn: sqlite3.Connection, request_id: int, settings: dict, at: str, applied_by: str,
+                 base_version: int) -> int:
+    """提案した設定を新しい版として保存し、頼んだ記録を「反映した」にする（一緒に成功するか、一緒に失敗する）。
+    settings は base_version の設定から作ったもの。書き込みの鍵を取った後に、版が変わっていないかを確かめる
+    （別の画面から同時に「反映する」が押されても、版は1つだけできる）。"""
     with conn:
+        conn.execute("BEGIN IMMEDIATE")
+        if current_settings(conn)[0] != base_version:
+            raise LedgerError("ほかの画面で設定が変わりました。画面を読み込み直してから、もう一度押してください")
         req = conn.execute("SELECT status FROM change_requests WHERE id = ?", (request_id,)).fetchone()
         if not req or req["status"] != "proposed":
             raise LedgerError("反映できるのは、まだ反映していない提案だけです")
@@ -1086,6 +1100,7 @@ def apply_change(conn: sqlite3.Connection, request_id: int, settings: dict, at: 
 def revert_last_change(conn: sqlite3.Connection, at: str, handled_by: str) -> dict:
     """さっきの変更（いちばん新しい版を作った反映）を取り消す。前の版の中身で新しい版を作る。お知らせの記録は消さない。"""
     with conn:
+        conn.execute("BEGIN IMMEDIATE")
         last = conn.execute("SELECT version, change_request_id FROM settings_versions ORDER BY version DESC LIMIT 1").fetchone()
         req = conn.execute("SELECT * FROM change_requests WHERE id = ?", (last["change_request_id"],)).fetchone() if last else None
         if not last or not req or req["status"] != "applied" or req["applied_version"] != last["version"]:
@@ -1123,6 +1138,7 @@ def undo_last_reminder(conn: sqlite3.Connection, reserve_no: str, at: str, handl
     """間違えて押した最後の「送った」「返事あり」を取り消す。取り消した記録は reminder_undos に残す。
     （「日時を変えた」は日時の変更と一緒に残るので、ここでは取り消さない。日時は「日時を変える」で直す）"""
     with conn:
+        conn.execute("BEGIN IMMEDIATE")
         row = conn.execute("SELECT * FROM reminders WHERE reserve_no = ? AND result IN ('sent', 'replied')"
                            " ORDER BY at DESC, id DESC LIMIT 1", (reserve_no,)).fetchone()
         if not row:

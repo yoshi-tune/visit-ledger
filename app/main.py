@@ -466,14 +466,14 @@ def apply_change(request_id: int, body: StaffIn, conn: sqlite3.Connection = Depe
     tab = (json.loads(row["proposal_json"] or "{}")).get("tab_checked")
     if not tab:
         raise HTTPException(400, "反映できる提案がありません")
-    _, settings = ledger.current_settings(conn)
+    base, settings = ledger.current_settings(conn)
     try:
         tab = maintenance.validate_tab(tab)  # 保存の前にもう一度確かめる
         maintenance.check_proposal({"possible": True, "reply": "", "tab": tab}, settings)
     except maintenance.ProposalError as e:
         raise HTTPException(400, str(e)) from e
     new = maintenance.with_tab(settings, tab, f"tab{request_id}")
-    version = guard(ledger.apply_change, conn, request_id, new, fmt(config.now()), body.staff)
+    version = guard(ledger.apply_change, conn, request_id, new, fmt(config.now()), body.staff, base)
     return {"ok": True, "version": version}
 
 
@@ -671,7 +671,10 @@ class VisitIn(StaffIn):
 def record_visit(body: VisitIn, conn: sqlite3.Connection = Depends(get_conn)) -> dict:
     recorded = config.now()
     if body.visited_on:
-        day = date.fromisoformat(body.visited_on)
+        try:
+            day = date.fromisoformat(body.visited_on)
+        except ValueError as e:
+            raise HTTPException(400, "来店の日付が読めません") from e
         if day > config.TODAY:
             raise HTTPException(400, "先の日付の来店は記録できません")
         r = ledger.get_reservation(conn, body.reserve_no)

@@ -96,7 +96,7 @@ function render() {
     screen("ご来店の時間は？", `${fmtDay(state.day)} の空いている時間です。`,
       [choices(items, state.slot, (v) => { state.slot = v; }, "slot-grid")]);
   } else if (step === "contact") {
-    const name = /** @type {HTMLInputElement} */ (el("input", { class: "input", id: "name", autocomplete: "name", enterkeyhint: "next" }));
+    const name = /** @type {HTMLInputElement} */ (el("input", { class: "input", id: "name", autocomplete: "name", enterkeyhint: "next", maxlength: "40" }));
     const phone = /** @type {HTMLInputElement} */ (el("input", { class: "input", id: "phone", type: "tel", inputmode: "tel", autocomplete: "tel", placeholder: "090-0000-0000", enterkeyhint: "done" }));
     name.value = state.name;
     phone.value = state.phone;
