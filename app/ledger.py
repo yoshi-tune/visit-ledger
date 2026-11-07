@@ -917,6 +917,26 @@ def analysis_cost_summary(conn: sqlite3.Connection, default_model: str) -> list[
     return [dict(r) for r in rows]
 
 
+def public_spend(conn: sqlite3.Connection, budget_cents: int, proposal_cents: int) -> tuple[int, int]:
+    """公開版の全体の上限のための (使った額と見込む額の合計, 動いている分析の数)。セント・目安。
+    見本の報告は数えない。費用の記録が無い本物の分析と、動いている分析は、1回の上限を使ったとみなす。"""
+    row = conn.execute(
+        "SELECT"
+        " COALESCE(SUM(CASE"
+        "   WHEN status IN ('queued', 'running') THEN ?"
+        "   WHEN cost_cents IS NOT NULL THEN cost_cents"
+        "   WHEN status = 'failed' AND session_id IS NULL THEN 0"
+        "   ELSE ? END), 0) AS cents,"
+        " COALESCE(SUM(status IN ('queued', 'running')), 0) AS running"
+        " FROM analysis_runs WHERE COALESCE(json_extract(report_json, '$.mode'), '') != 'sample'",
+        (budget_cents, budget_cents),
+    ).fetchone()
+    proposals = conn.execute(
+        "SELECT COUNT(*) FROM change_requests WHERE json_extract(proposal_json, '$.mode') = 'claude'"
+    ).fetchone()[0]
+    return int(row["cents"]) + proposals * proposal_cents, int(row["running"])
+
+
 def add_analysis_message(conn: sqlite3.Connection, analysis_id: str, at: str, role: str,
                          status: str, text: str | None = None) -> int:
     with conn:

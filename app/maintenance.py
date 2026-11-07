@@ -194,9 +194,9 @@ def propose_request(text: str, settings: dict) -> dict:
             "messages": [{"role": "user", "content": content}]}
 
 
-def propose(text: str, settings: dict) -> tuple[dict, str]:
-    """(提案, mode)。鍵が無い時は、本物の提案を保存した見本を返す（mode = sample）。"""
-    if not os.environ.get("ANTHROPIC_API_KEY"):
+def propose(text: str, settings: dict, force_sample: bool = False) -> tuple[dict, str]:
+    """(提案, mode)。鍵が無い時（と公開版の全体の上限に達した時）は、本物の提案を保存した見本を返す（mode = sample）。"""
+    if force_sample or not os.environ.get("ANTHROPIC_API_KEY"):
         if not SAMPLE_PROPOSAL.exists():
             raise ProposalError("鍵が無く、見本の提案もありません")
         return json.loads(SAMPLE_PROPOSAL.read_text(encoding="utf-8"))["proposal"], "sample"

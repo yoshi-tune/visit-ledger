@@ -102,7 +102,7 @@ function render() {
     phone.value = state.phone;
     name.addEventListener("input", () => { state.name = name.value.trim(); update(); });
     phone.addEventListener("input", () => { state.phone = phone.value.trim(); update(); });
-    screen("ご連絡先", "お店から連絡が必要な時だけ使います。",
+    screen("ご連絡先", conf?.public ? "見本のページです。本名・本当の電話番号は入れないでください（例：見本 太郎・090-0000-0000）。" : "お店から連絡が必要な時だけ使います。",
       [el("label", { class: "field" }, [el("span", {}, ["お名前"]), name]),
        el("label", { class: "field" }, [el("span", {}, ["電話番号"]), phone])]);
   } else {

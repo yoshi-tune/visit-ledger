@@ -12,13 +12,14 @@ import secrets
 import sqlite3
 from collections.abc import Iterator
 from datetime import date, datetime
+from urllib.parse import quote
 
 from fastapi import Depends, FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, RedirectResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from app import analysis, config, funnel, ledger, maintenance
+from app import analysis, config, funnel, ledger, maintenance, public
 
 if not config.DB_PATH.exists():
     # 初めての起動：見本の台帳を作る（scripts/make_sample.py と同じ中身。作り直す時はそちらを回す）
@@ -36,8 +37,25 @@ with ledger.connect(config.DB_PATH) as _conn:
     analysis.resume_unfinished(_conn)
 
 STATIC = config.ROOT / "app" / "static"
-app = FastAPI(title="visit-ledger")
+# 公開版では API の説明の画面（/docs など）を出さない
+app = FastAPI(title="visit-ledger", **({"docs_url": None, "redoc_url": None, "openapi_url": None} if public.PUBLIC else {}))
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
+
+
+@app.middleware("http")
+async def login_gate(request, call_next):
+    # 公開版だけ：ログインしていない人は、LP・予約・お客様のクーポンと、それらが使う API だけを開ける
+    if public.PUBLIC and not public.is_open(request.method, request.url.path)             and not public.valid_token(request.cookies.get(public.COOKIE)):
+        if request.url.path.startswith("/api/"):
+            return JSONResponse({"detail": "ログインしてください"}, status_code=401)
+        return RedirectResponse(f"/login?next={quote(request.url.path)}", status_code=303)
+    return await call_next(request)
+
+
+@app.exception_handler(Exception)
+async def hide_errors(request, exc):
+    # 思わぬ失敗は、中身を出さずに決まった文だけを返す（中身はサーバーのログにだけ残る）
+    return JSONResponse({"detail": "うまくいきませんでした。少し待ってからもう一度試してください。"}, status_code=500)
 
 
 @app.middleware("http")
@@ -81,6 +99,42 @@ def guard(fn, *args, **kwargs):
         return fn(*args, **kwargs)
     except ledger.LedgerError as e:
         raise HTTPException(400, str(e)) from e
+
+
+# ---- ログイン（公開版だけ） ------------------------------------------------------
+
+class LoginIn(BaseModel):
+    user: str = Field(max_length=100)
+    password: str = Field(max_length=200)
+
+
+@app.get("/login", include_in_schema=False)
+def login_page() -> Response:
+    if not public.PUBLIC:
+        return RedirectResponse("/dashboard")
+    return page("login.html")
+
+
+@app.post("/api/login")
+def login(body: LoginIn) -> Response:
+    if not public.PUBLIC:
+        raise HTTPException(404, "手元の起動にはログインはありません")
+    if not public.check_password(body.user, body.password):
+        import time
+
+        time.sleep(1)  # 総当たりを遅らせる
+        raise HTTPException(401, "ID かパスワードが違います")
+    res = JSONResponse({"ok": True})
+    res.set_cookie(public.COOKIE, public.make_token(body.user), max_age=public.LOGIN_DAYS * 86400,
+                   httponly=True, secure=True, samesite="lax")
+    return res
+
+
+@app.get("/logout", include_in_schema=False)
+def logout() -> Response:
+    res = RedirectResponse("/login", status_code=303)
+    res.delete_cookie(public.COOKIE)
+    return res
 
 
 # ---- 画面 -------------------------------------------------------------------
@@ -170,6 +224,7 @@ def get_config(conn: sqlite3.Connection = Depends(get_conn)) -> dict:
         "period": {"from": config.PERIOD_FROM.isoformat(), "to": config.PERIOD_TO.isoformat()},
         "models": [{"id": k, **v} for k, v in config.MODELS.items()],
         "default_model": config.DEFAULT_MODEL,
+        "public": public.PUBLIC,  # 公開版（審査用の URL）か。予約の画面で「本名・本当の電話番号は入れない」を出す
     }
 
 
@@ -376,7 +431,7 @@ def create_change(body: ChangeIn, conn: sqlite3.Connection = Depends(get_conn)) 
     _, settings = ledger.current_settings(conn)
     rid = ledger.add_change_request(conn, fmt(config.now()), body.staff, body.text.strip(), body.source_analysis_id)
     try:
-        proposal, mode = maintenance.propose(body.text.strip(), settings)
+        proposal, mode = maintenance.propose(body.text.strip(), settings, force_sample=public.refuse_proposal(conn))
         tab = maintenance.check_proposal(proposal, settings)
     except maintenance.ProposalError as e:
         ledger.update_change_request(conn, rid, status="failed", reason=f"提案を捨てました：{e}",
@@ -646,7 +701,8 @@ def start_analysis(body: AnalysisIn | None = None,
     if model not in config.MODELS:
         raise HTTPException(400, f"選べないモデルです: {model}")
     snap, fun = current_funnel(conn)
-    return analysis.start(conn, snap, fun, model)
+    notice = public.refuse_analysis(conn)  # 公開版の全体の上限・一度に1つまで。断る時は見本の報告を出す
+    return {**analysis.start(conn, snap, fun, model, force_sample=bool(notice)), "notice": notice}
 
 
 @app.get("/api/analysis-costs")
@@ -659,6 +715,8 @@ def analysis_costs(conn: sqlite3.Connection = Depends(get_conn)) -> dict:
 def ask_analysis(analysis_id: str, body: QuestionIn,
                  conn: sqlite3.Connection = Depends(get_conn)) -> dict:
     """分析の続きの質問（壁打ち）。同じエージェントのセッションに送り、答えは裏の処理で書く。"""
+    if refused := public.refuse_question(conn):
+        raise HTTPException(400, refused)
     try:
         return analysis.ask(conn, analysis_id, body.text)
     except analysis.RunError as e:

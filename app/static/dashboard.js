@@ -127,6 +127,7 @@ ask.addEventListener("click", async () => {
     const url = `/analysis/${encodeURIComponent(r.analysis_id)}`;
     if (win) win.location.href = url; else location.href = url;
     showLast(r.analysis_id);
+    if (r.notice) byId("status").append(el("p", { class: "muted" }, [r.notice]));  // 公開版で見本の報告に切り替えた時の理由
   } catch (e) {
     win?.close();
     byId("status").textContent = `頼めませんでした：${/** @type {Error} */ (e).message}`;
