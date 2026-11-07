@@ -81,7 +81,10 @@ function proposalCard(it) {
       ]))));
     }
     if (it.status === "proposed") {
-      children.push(el("p", { class: "mt-apply-note" }, [`③ 反映すると、受付に「${it.tab.title}」のタブが出て、上の ${p.rows.length}件が並びます（あとで取り消せます）。`]));
+      children.push(el("p", { class: "mt-apply-note" }, [`③ 分析が求めた対象と、この条件・一覧が合っているか確かめてください。合っていれば「反映する」で、受付に「${it.tab.title}」のタブが出て、上の ${p.rows.length}件が並びます（あとで取り消せます）。合わなければ「やめる」で、依頼の文を直して頼み直します。`]));
+      if (it.source_analysis_id) {
+        children.push(el("p", { class: "small" }, [el("a", { href: `/analysis/${encodeURIComponent(it.source_analysis_id)}`, target: "vl-analysis" }, ["元の分析の次の一手を見る →"])]));
+      }
       children.push(el("div", { class: "actions", style: "display:flex;gap:10px;margin-top:8px" }, [
         button("反映する", "btn", async () => {
           await api(`/api/change-requests/${it.id}/apply`, { json: { staff } });

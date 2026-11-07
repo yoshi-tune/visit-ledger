@@ -59,7 +59,7 @@ function proposalLine(p) {
   if (!p && latestTries < 6) return [el("p", { class: "loop-line wait" }, ["ナットクが、この次の一手から受付のタブの提案を作っています…（数秒）"])];
   if (!p) return [el("a", { class: "loop-line todo", href: "/maintenance" }, ["この次の一手の提案はまだありません。次の一手の画面でナットクに頼めます →"])];
   if (p.status === "proposed") {
-    return [el("a", { class: "loop-line todo", href: "/maintenance" }, [`人の番です：受付のタブ「${p.title}」の提案が反映待ちです →`])];
+    return [el("a", { class: "loop-line todo", href: "/maintenance" }, [`人の番です：受付のタブ「${p.title}」の提案を、分析と見比べて反映するか決めてください →`])];
   }
   if (p.status === "applied") {
     return [el("a", { class: "loop-line done", href: "/desk" }, [`反映済み：受付に「${p.title}」のタブが出ています →`])];
