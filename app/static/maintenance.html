@@ -8,8 +8,8 @@
 </head>
 <body>
   <header class="app-header">
-    <div class="brand">ナットクに頼む<small id="store"></small></div>
-    <nav class="app-nav"><a href="/desk">受付</a><a href="/desk/coupon">クーポン</a><a href="/dashboard">効果</a><a href="/settings">店の設定</a><a href="/maintenance" aria-current="page">頼む</a><a href="/improve">改善</a></nav>
+    <div class="brand"><span class="brand-name">ナットク台帳</span>次の一手（ナットクに頼む）<small id="store"></small></div>
+    <nav class="app-nav" aria-label="画面の切り替え"><a href="/desk">受付</a><a href="/desk/coupon">クーポン</a><a href="/dashboard">効果</a><a href="/maintenance" aria-current="page">次の一手</a><a href="/improve">分析の見直し</a><a href="/settings">店の設定</a><a href="/about">しくみ</a></nav>
   </header>
   <main class="app-main" style="max-width:900px">
     <section class="improve-intro">
@@ -30,7 +30,8 @@
     </div>
     <form id="ask" class="card">
       <label for="text"><b>依頼の文</b></label>
-      <textarea id="text" class="input" rows="4" maxlength="600" style="width:100%;margin-top:8px"></textarea>
+      <textarea id="text" class="input" rows="4" maxlength="600" style="width:100%;margin-top:8px" placeholder="例：予約を送ってから来店予定日まで8日以上ある予約に、前日にお知らせを送りたい。受付で分かるようにして。"></textarea>
+      <p id="sample-hint" class="muted" hidden></p>
       <div style="margin-top:10px"><button class="btn" type="submit" id="send">ナットクに相談する</button></div>
     </form>
     <div id="result"></div>

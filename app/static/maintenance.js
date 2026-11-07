@@ -33,7 +33,7 @@ function button(label, cls, fn, ask) {
 function proposalCard(it) {
   const children = [];
   if (it.mode === "sample") {
-    children.push(el("p", { class: "banner" }, [`見本の提案です。鍵が設定されていないため、依頼「${it.sample_text || "（見本の依頼）"}」で Claude が実際に出した提案をそのまま出しています（今の依頼の文に合わせて作ったものではありません）。件数と一覧は、今の台帳でアプリが数えています。`]));
+    children.push(el("p", { class: "banner" }, [`見本の提案です（鍵が無い時や、公開版で費用の上限に近い時に出します）。依頼「${it.sample_text || "（見本の依頼）"}」で Claude が実際に出した提案をそのまま出しています（今の依頼の文に合わせて作ったものではありません）。件数と一覧は、今の台帳でアプリが数えています。`]));
   }
   if (it.reply) children.push(say(it.reply, it.tab ? "happy" : "think"));
   if (it.status === "failed" || (!it.tab && it.reason)) {
@@ -117,6 +117,12 @@ async function main() {
     seg.append(b);
   }
   const text = /** @type {HTMLTextAreaElement} */ (byId("text"));
+  if (!conf.has_key) {
+    // 鍵が無い時は、相談を押す前に「見本の提案が返る」と知らせる（依頼と違う提案が返って戸惑わないように）
+    const hint = byId("sample-hint");
+    hint.textContent = "鍵が無いので、依頼の文に関わらず、前に Claude が実際に出した見本の提案（8日以上先の予約に、前日のお知らせ）が返ります。件数と一覧は、今の台帳でアプリが数えます。";
+    hint.hidden = false;
+  }
   if (fromAnalysis) {
     try {
       const d = await api(`/api/change-requests/draft?from_analysis=${encodeURIComponent(fromAnalysis)}`);

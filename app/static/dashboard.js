@@ -9,15 +9,11 @@ const ask = /** @type {HTMLButtonElement} */ (byId("ask"));
 /** @param {any} c */
 function kpi(c) {
   const b = c.reservations;
+  // 予約・来店待ち・取消の内訳は、下の「来店までの道のり」に出すので、ここは来店率と式だけにする
   return el("section", { class: "card kpi" }, [
     el("div", { class: "label" }, [el("span", { class: `dot ${c.src}` }), `${srcLabel(c.src)} 経由の来店率`]),
     el("div", { class: "value" }, [fmtRate(c.visit_rate)]),
     el("div", { class: "sub" }, [`来店 ${b.visited} ÷（来店 ${b.visited} ＋ 来店未記録 ${b.unrecorded}）`]),
-    el("div", { class: "mini" }, [
-      el("div", {}, [el("b", {}, [String(b.total)]), el("span", {}, ["予約"])]),
-      el("div", {}, [el("b", {}, [String(b.waiting)]), el("span", {}, ["来店待ち"])]),
-      el("div", {}, [el("b", {}, [String(b.cancelled)]), el("span", {}, ["取消"])]),
-    ]),
   ]);
 }
 
@@ -114,13 +110,13 @@ function renderCostNote() {
 /** 前に頼んだ分析への入口 @param {string} id */
 function showLast(id) {
   const link = el("a", { href: `/analysis/${encodeURIComponent(id)}`, target: "vl-analysis" }, ["分析の画面を開く"]);
-  byId("status").replaceChildren(say(el("span", {}, ["分析は別の画面で進めています。閉じてしまった時は ", link, " から戻れます。"]), "work"));
+  byId("status").replaceChildren(say(el("span", {}, ["分析は新しいタブで進めています（ふつう4〜7分）。閉じてしまった時は ", link, " から戻れます。"]), "work"));
 }
 
 ask.addEventListener("click", async () => {
   ask.disabled = true;
-  // ポップアップを止められないよう、押した瞬間に窓を開けておき、番号が決まってから行き先を入れる
-  const win = window.open("about:blank", "vl-analysis", "popup,width=1200,height=880");
+  // 止められないよう、押した瞬間に新しいタブを開けておき、番号が決まってから行き先を入れる（小さな別窓にはしない）
+  const win = window.open("about:blank", "vl-analysis");
   try {
     const r = await api("/api/analysis", { json: { model } });
     sessionStorage.setItem("vl:analysis", r.analysis_id);

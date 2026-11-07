@@ -54,11 +54,21 @@ let avail = [];
 
 const day = (/** @type {string | null} */ iso) => (iso || "").slice(0, 10);
 
+/** 記録の後に、流れの次の画面を案内する（知らせはすぐ消えるので、上に残す）
+ * @param {string} text @param {string} href @param {string} label */
+function nextHint(text, href, label) {
+  const p = byId("next-hint");
+  p.replaceChildren(el("span", {}, [text]), el("a", { class: "btn sm", href }, [label]));
+  p.hidden = false;
+}
+
 /** @param {string} path @param {object} body @param {string} done @param {string} [method] @param {boolean} [cheer] */
 async function act(path, body, done, method, cheer = false) {
   try {
     await api(path, { json: { staff, ...body }, method });
     toast(done, false, cheer ? mascot("cheer", 30) : undefined);
+    if (path === "/api/visits") nextHint("来店を台帳に記録しました。効果の画面の来店の数字が変わります。", "/dashboard", "効果の画面で見る →");
+    if (path === "/api/reminders") nextHint("お知らせの記録は台帳に残り、次の分析がこの記録を読みます。", "/dashboard#claude", "次の分析を頼む →");
     openPicker = "";
     await load();
   } catch (e) {

@@ -1,14 +1,14 @@
 // @ts-check
-// 公開版（審査用の URL）のログイン。入れたら、開こうとしていた画面（無ければ効果の画面）へ移る。
+// 公開版（審査用の URL）のログイン。入れたら、開こうとしていた画面（無ければ受付）へ移る。
 import { api } from "./common.js";
 
 const form = /** @type {HTMLFormElement} */ (document.getElementById("form"));
 const error = /** @type {HTMLElement} */ (document.getElementById("error"));
 
-/** 開こうとしていた画面。この店のアプリの中の道だけに限る（外のサイトへは移さない） */
+/** 開こうとしていた画面。この店のアプリの中の道だけに限る（外のサイトへは移さない）。無ければ受付（README の順：受付 → 効果） */
 function nextPath() {
   const next = new URLSearchParams(location.search).get("next") || "";
-  return next.startsWith("/") && !next.startsWith("//") && !next.startsWith("/\\") ? next : "/dashboard";
+  return next.startsWith("/") && !next.startsWith("//") && !next.startsWith("/\\") ? next : "/desk";
 }
 
 form.addEventListener("submit", async (ev) => {

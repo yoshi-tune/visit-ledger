@@ -62,10 +62,12 @@ function renderChat(run) {
   const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 40;
   log.replaceChildren(...(run.messages.length ? run.messages.map(bubble)
     : [say(run.can_ask ? "報告を読んで気になったことを聞いてください。台帳を数え直して答えます。"
-      : run.report?.mode === "sample" ? "見本の報告には質問できません。鍵を設定して本物の分析を頼むと、ここで続けて聞けます。"
+      : run.report?.mode === "sample" ? "見本の報告には質問できません。本物の分析では、ここで Claude に続けて聞けます。"
       : "報告ができたら、ここで続けて聞けます。", "normal", { size: 48 })]));
   if (atBottom || run.messages.length) log.scrollTop = log.scrollHeight;
 
+  // 見本の報告では聞けないので、質問の欄を小さくたたむ
+  byId("chat-form").closest("aside")?.classList.toggle("chat-off", run.report?.mode === "sample");
   const busy = run.messages.some((/** @type {any} */ m) => m.status === "pending");
   input.disabled = send.disabled = !run.can_ask || busy;
   byId("suggest").replaceChildren(...(run.can_ask && !busy ? SUGGEST.map((q) => {

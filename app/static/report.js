@@ -23,7 +23,7 @@ export function renderReport(run) {
   if (r) {
     if (r.mode === "sample") {
       out.push(el("p", { class: "banner" }, [
-        `見本の報告です。鍵が設定されていないため、作ったばかりの見本の台帳で Claude（${run.model_label || run.model}）が実際に分析した結果を出しています。画面で来店などを記録した後は、効果の画面の数字と合いません。`,
+        `見本の報告です。作ったばかりの見本の台帳で Claude（${run.model_label || run.model}）が実際に分析した結果を保存したものです（鍵が無い時や、公開版で費用の上限・ほかの人の分析と重なった時に出します）。画面で来店などを記録した後は、効果の画面の数字と合いません。`,
       ]));
     }
     if (r.mode === "messages") {
@@ -58,11 +58,11 @@ export function renderReport(run) {
     }
     const rec = r.reconciliation;
     // 先に読むもの：見立ての変化・次の一手・仮説。残りは開いた時だけ見る（検算は食い違いがある時だけ開いておく）
-    out.push(block("見立ての変化", [el("div", { class: "views" }, [
+    const views = block("見立ての変化", [el("div", { class: "views" }, [
       el("div", { class: "view" }, [el("div", { class: "muted" }, ["最初の見立て"]), el("p", {}, [r.first_view])]),
       el("div", { class: "arrow", "aria-hidden": "true" }, ["→"]),
       el("div", { class: "view after" }, [el("div", { class: "muted" }, ["集計を重ねた後"]), el("p", {}, [r.revised_view])]),
-    ])]));
+    ])]);
     const n = r.next_action;
     out.push(el("section", { class: "next-action" }, [
       el("div", { class: "small" }, ["次の一手（店全体で1つ）"]),
@@ -76,6 +76,7 @@ export function renderReport(run) {
       // 次の一手を受付の仕事にする（依頼の文は下書きを出す。反映するかは人が決める）
       el("a", { class: "btn ask", href: `/maintenance?from=${encodeURIComponent(run.analysis_id)}` }, ["ナットクに頼む（受付でできるようにする）"]),
     ]));
+    out.push(views);  // 結論（次の一手）を先に読み、その根拠の見立ての変化を後に置く
     out.push(block("原因の仮説（言い切りません）", (r.hypotheses || []).map((/** @type {any} */ h) =>
       el("div", { class: "card", style: "box-shadow:none;margin-bottom:8px" }, [
         el("p", {}, [el("b", {}, [h.statement])]),
@@ -124,18 +125,29 @@ export function renderReport(run) {
   return out;
 }
 
+/** 分析ごとに、この画面で最初に「調べている」と見た時刻 @type {Map<string, number>} */
+const seenAt = new Map();
+
 /** 案内役のひと言（分析の進み具合に合わせて表情を変える） @param {any} run */
 export function guide(run) {
   const tools = (run.tool_log || []).filter((/** @type {any} */ e) => e.kind === "tool").length;
   if (run.status === "queued" || run.status === "running") {
-    const text = el("span", { class: "row", style: "display:flex;gap:8px;align-items:center" }, [
-      el("span", { class: "spinner", "aria-hidden": "true" }),
-      `Claude が台帳を調べています…${tools ? `（集計の実行 ${tools}回）` : ""}`,
+    // 経過の時間は、この画面で最初に見た時から数える（目安を出して、止まっていないと分かるように）
+    const since = seenAt.get(run.analysis_id) ?? Date.now();
+    seenAt.set(run.analysis_id, since);
+    const sec = Math.floor((Date.now() - since) / 1000);
+    const text = el("span", { style: "display:grid;gap:4px" }, [
+      el("span", { class: "row", style: "display:flex;gap:8px;align-items:center" }, [
+        el("span", { class: "spinner", "aria-hidden": "true" }),
+        el("b", {}, ["Claude が台帳を数え直しています"]),
+      ]),
+      el("span", { class: "small" }, [`ふつう4〜7分かかります・経過 ${Math.floor(sec / 60)}分${sec % 60}秒${tools ? `・集計の実行 ${tools}回` : ""}`]),
+      el("span", { class: "small muted" }, ["この画面を閉じても分析は続きます。効果の画面の「分析の画面を開く」から戻れます。"]),
     ]);
     return say(text, "work");
   }
   if (run.status === "done" && run.report && run.report.mode === "sample") {
-    return say("鍵が無いので、前に見本の台帳で調べた報告を出しています。本物の分析は、鍵を設定すると頼めます。", "think");
+    return say("見本の報告です（理由は下の帯）。まず、結論の「次の一手」から読んでください。", "think");
   }
   if (run.status === "done" && run.report) {
     // 項目が無い前の報告だけ、文字の比較で代わりにする

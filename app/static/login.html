@@ -9,6 +9,7 @@
     .login { max-width: 420px; margin: 10vh auto; padding: 0 16px; }
     .login h1 { font-size: 1.5rem; margin-bottom: 4px; }
     .login form { margin-top: 20px; }
+    .login-links { margin: 16px 0 0; padding-left: 1.2em; line-height: 1.9; }
   </style>
 </head>
 <body>
@@ -22,6 +23,10 @@
       <button class="btn block" type="submit">ログイン</button>
     </form>
     <p class="muted">LP（お客様が見るページ）は、ログインしなくても開けます。</p>
+    <ul class="login-links">
+      <li><a href="/lp/S-EKI?campaign=autumn_check_202610&amp;src=flyer">① LP（チラシの QR から開くページ）を開く</a></li>
+      <li><a href="/about">② しくみの説明（配る → 予約 → 来店 → 効果 → Claude）</a></li>
+    </ul>
   </main>
   <script type="module" src="/static/login.js"></script>
 </body>

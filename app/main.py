@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import io
 import json
+import os
 import secrets
 import sqlite3
 from collections.abc import Iterator
@@ -231,6 +232,7 @@ def get_config(conn: sqlite3.Connection = Depends(get_conn)) -> dict:
         "period": {"from": config.PERIOD_FROM.isoformat(), "to": config.PERIOD_TO.isoformat()},
         "models": [{"id": k, **v} for k, v in config.MODELS.items()],
         "default_model": config.DEFAULT_MODEL,
+        "has_key": bool(os.environ.get("ANTHROPIC_API_KEY")),  # 鍵が無ければ、分析とナットクの提案は見本を出す（画面で先に知らせる）
         "public": public.PUBLIC,  # 公開版（審査用の URL）か。予約の画面で「本名・本当の電話番号は入れない」を出す
     }
 

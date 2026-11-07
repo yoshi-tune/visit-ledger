@@ -145,6 +145,10 @@ a { color: var(--accent); }
 .hero h1 { font-size: 1.75rem; margin: 6px 0 10px; }
 .hero p { margin: 0; opacity: 0.95; }
 .section-title { font-size: 1.0625rem; margin: 24px 0 10px; }
+/* お客様の画面の終わりに置く、お店の側の画面への渡り（審査で LP から入った人の行き止まりを無くす） */
+.store-side { margin-top: 24px; border: 1.5px dashed var(--line); border-radius: var(--radius); padding: 14px; display: grid; gap: 10px; }
+.store-side-lead { margin: 0; font-weight: 700; }
+.store-side .muted { margin: 0; }
 .info-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
 .info-list li { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; display: flex; gap: 12px; }
 .info-list .badge-num { flex: 0 0 28px; height: 28px; border-radius: 50%; background: var(--accent-soft); color: var(--accent); font-weight: 700; display: grid; place-items: center; }
@@ -181,11 +185,19 @@ a { color: var(--accent); }
 }
 .app-header .brand { font-weight: 800; }
 .app-header .brand small { color: var(--muted); font-weight: 400; margin-left: 8px; }
+.app-header .brand-name { color: var(--accent); font-weight: 800; margin-right: 10px; padding-right: 10px; border-right: 1px solid var(--line); }
 .app-nav { display: flex; gap: 4px; }
-.app-nav a { padding: 8px 14px; border-radius: 999px; color: var(--ink-2); text-decoration: none; font-weight: 700; }
+.app-nav a { padding: 8px 14px; border-radius: 999px; color: var(--ink-2); text-decoration: none; font-weight: 700; white-space: nowrap; }
+/* スマホの幅：題とナビを縦に積み、ナビは折らずに横にずらして見る */
+@media (max-width: 640px) {
+  .app-header { flex-direction: column; align-items: stretch; padding: 8px 12px; gap: 6px; }
+  .app-nav { overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; margin: 0 -12px; padding: 0 12px; }
+  .app-nav a { padding: 6px 12px; }
+}
 .app-nav a[aria-current="page"] { background: var(--surface-2); color: var(--ink); }
 .app-main { max-width: 1200px; margin: 0 auto; padding: 20px; }
 .toolbar { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+.toolbar-right { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .today-chip { background: var(--surface-2); border-radius: 999px; padding: 6px 14px; font-weight: 700; }
 .seg { display: inline-flex; background: var(--surface-2); border-radius: 999px; padding: 4px; }
 .seg button { appearance: none; border: 0; background: transparent; font: inherit; font-weight: 700; color: var(--ink-2); padding: 8px 16px; border-radius: 999px; min-height: 40px; cursor: pointer; }
@@ -229,6 +241,8 @@ a { color: var(--accent); }
 .search { max-width: 420px; }
 
 /* ---- 効果の画面 ---- */
+.next-hint { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; background: var(--accent-soft); border-radius: 12px; padding: 10px 14px; font-weight: 700; margin: 0 0 16px; }
+.next-hint[hidden] { display: none; }
 .banner { background: var(--warn-soft); color: var(--warn); border-radius: 12px; padding: 10px 14px; font-weight: 700; font-size: 0.9375rem; margin-bottom: 16px; }
 .kpis { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); margin-bottom: 16px; }
 .kpi .label { display: flex; align-items: center; gap: 8px; font-weight: 700; color: var(--ink-2); }
@@ -385,6 +399,10 @@ details > summary { cursor: pointer; font-weight: 700; color: var(--ink-2); padd
 .analysis-main { min-width: 0; }
 .chat { position: sticky; top: 12px; display: flex; flex-direction: column; max-height: calc(100vh - 96px); min-width: 0; }
 .chat h2 { font-size: 1.0625rem; }
+/* 見本の報告の時は、質問の欄をたたむ（聞けないので場所を取らない） */
+.analysis-layout:has(.chat-off) { grid-template-columns: minmax(0, 1fr) 260px; }
+.chat.chat-off .chat-form, .chat.chat-off .suggest, .chat.chat-off > .muted { display: none; }
+.chat.chat-off .chat-log { min-height: 0; }
 .chat-log { flex: 1 1 auto; overflow-y: auto; display: grid; gap: 10px; align-content: start; padding: 8px 2px; min-height: 160px; }
 .msg { display: flex; gap: 8px; align-items: flex-end; }
 .msg .text { padding: 10px 12px; border-radius: 14px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 0.9375rem; line-height: 1.6; }

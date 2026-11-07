@@ -8,8 +8,8 @@
 </head>
 <body>
   <header class="app-header">
-    <div class="brand">施策の効果<small id="store"></small></div>
-    <nav class="app-nav"><a href="/desk">受付</a><a href="/desk/coupon">クーポン</a><a href="/dashboard" aria-current="page">効果</a><a href="/settings">店の設定</a><a href="/maintenance">頼む</a><a href="/improve">改善</a></nav>
+    <div class="brand"><span class="brand-name">ナットク台帳</span>効果<small id="store"></small></div>
+    <nav class="app-nav" aria-label="画面の切り替え"><a href="/desk">受付</a><a href="/desk/coupon">クーポン</a><a href="/dashboard" aria-current="page">効果</a><a href="/maintenance">次の一手</a><a href="/improve">分析の見直し</a><a href="/settings">店の設定</a><a href="/about">しくみ</a></nav>
   </header>
   <main class="app-main">
     <div class="toolbar">
@@ -17,7 +17,10 @@
         <h1 style="font-size:1.25rem">秋の点検キャンペーン</h1>
         <div class="muted" id="period"></div>
       </div>
-      <span class="today-chip" id="asof"></span>
+      <div class="toolbar-right">
+        <a class="btn sm" href="#claude">Claude に分析を頼む ↓</a>
+        <span class="today-chip" id="asof"></span>
+      </div>
     </div>
     <p id="note" class="banner"></p>
 
@@ -25,17 +28,17 @@
     <div id="funnels" class="two"></div>
     <p id="unknown" class="muted"></p>
 
-    <section class="card" style="margin-top:16px">
+    <section class="card" id="claude" style="margin-top:16px;scroll-margin-top:80px">
       <div class="analysis-head">
         <div>
           <h2>Claude に分析を頼む</h2>
-          <p class="muted">台帳の書き出し（名前・電話を含まない列だけ）とこの画面の数字を渡し、Claude が集計を重ねて調べます。報告は別の画面に出て、そのままチャットで続けて質問できます。</p>
+          <p class="muted">台帳の書き出し（名前・電話を含まない列だけ）とこの画面の数字を渡し、Claude が集計を重ねて調べます。ふつう4〜7分かかります。報告は新しいタブに出て、そのままチャットで続けて質問できます。</p>
         </div>
       </div>
       <h3 class="small-head">使うモデル</h3>
       <div id="models" class="model-row" role="group" aria-label="使うモデル"></div>
       <p id="cost-note" class="muted" style="margin-top:8px"></p>
-      <div class="ask-row"><button id="ask" class="btn">分析を頼む（別の画面で開く）</button></div>
+      <div class="ask-row"><button id="ask" class="btn">分析を頼む（4〜7分・新しいタブで開く）</button></div>
       <div id="status" class="analysis-status"></div>
     </section>
     <p id="error" class="input-error"></p>

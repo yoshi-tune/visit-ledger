@@ -8,8 +8,8 @@
 </head>
 <body>
   <header class="app-header">
-    <div class="brand">受付<small id="store"></small></div>
-    <nav class="app-nav"><a href="/desk" aria-current="page">受付</a><a href="/desk/coupon">クーポン</a><a href="/dashboard">効果</a><a href="/settings">店の設定</a><a href="/maintenance">頼む</a><a href="/improve">改善</a></nav>
+    <div class="brand"><span class="brand-name">ナットク台帳</span>受付<small id="store"></small></div>
+    <nav class="app-nav" aria-label="画面の切り替え"><a href="/desk" aria-current="page">受付</a><a href="/desk/coupon">クーポン</a><a href="/dashboard">効果</a><a href="/maintenance">次の一手</a><a href="/improve">分析の見直し</a><a href="/settings">店の設定</a><a href="/about">しくみ</a></nav>
   </header>
   <main class="app-main">
     <div class="toolbar">
@@ -22,6 +22,7 @@
         <div id="staff" class="seg" role="group" aria-label="担当"></div>
       </div>
     </div>
+    <p id="next-hint" class="next-hint" role="status" hidden></p>
     <div class="tabs" role="tablist">
       <button role="tab" data-tab="today">今日の予約<span class="count" id="c-today"></span></button>
       <button role="tab" data-tab="visited">今日の来店<span class="count" id="c-visited"></span></button>
