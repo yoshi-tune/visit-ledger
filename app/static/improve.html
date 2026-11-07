@@ -13,13 +13,20 @@
   </header>
   <main class="app-main">
     <section class="improve-intro">
-      <h1>分析担当（AI）が、自分の仕事のやり方を見直す</h1>
-      <p class="muted">答えの分かっている見本の台帳で、分析担当に報告を書かせて試します。別の AI がやり方の直しを考え、直したやり方でもう一度書かせて、報告が良くなった時だけ残します。本番に使うかは、ここで人が決めます。</p>
-      <ul class="improve-rules">
-        <li>🔒 数の数え方・言ってはいけないこと・報告の形は、AI に変えさせません（人が決める所）</li>
-        <li>📏 良し悪しを決める基準も、AI に変えさせません（基準を甘くして「良くなった」ことにできないように）</li>
-        <li>👀 変わる所は、届く報告の前と後で見せます。説明の無い書き換えがあれば印を付けます</li>
-      </ul>
+      <h1>分析のやり方の見直し</h1>
+      <p class="muted">分析担当（Claude）が報告を書く時の手順書を、別の Claude が直し、答えの分かっている見本の台帳で試して、良くなった時だけ残します。本番に使うかは人が決めます。</p>
+      <ol class="improve-flow" aria-label="見直しの流れ">
+        <li><span class="who ai">Claude（直す役）</span><b>手順書を1〜3か所直す</b><small>前の回で止めた理由も読む</small></li>
+        <li><span class="who ai">Claude（分析担当）</span><b>見本の台帳2つで、前の版と直した版の両方で報告を書く</b><small>台帳A・台帳B（下の説明）</small></li>
+        <li><span class="who ai">Claude（確かめる役）＋採点</span><b>決まった問いで、報告の中身を確かめる</b><small>問いは直す役から変えられない</small></li>
+        <li><span class="who code">コードの決まり</span><b>全部の確かめが ○ で、前の版より良い時だけ「残す」</b><small>1つでも × なら「戻す」</small></li>
+        <li><span class="who human">人</span><b>残した版を、本番に使うか決める</b><small>この画面のボタン</small></li>
+      </ol>
+      <dl class="improve-terms">
+        <dt>台帳A</dt><dd>答えの分かっている見本。チラシの来店率が低く見えるが、本当の理由は「予約から来店予定日までの日数」（仕込み）</dd>
+        <dt>台帳B</dt><dd>チラシと LINE に差の無い見本。偶然かもしれない差を、確かな差のように言い切らないかを見る</dd>
+        <dt>変えさせない所</dt><dd>数の数え方・言ってはいけないこと・報告の形・良し悪しの基準（基準を甘くして「良くなった」ことにできないように）</dd>
+      </dl>
     </section>
     <div id="guide"></div>
     <div id="list"></div>

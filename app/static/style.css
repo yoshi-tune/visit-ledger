@@ -548,3 +548,28 @@ details > summary { cursor: pointer; font-weight: 700; color: var(--ink-2); padd
 .improve-steps li { background: var(--surface-2); border-radius: 12px; padding: 10px 12px; }
 .improve-steps p { margin: 6px 0 0; }
 .improve-step-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+/* 分析の見直し：流れ・用語・決め手・○× */
+.improve-flow { list-style: none; counter-reset: f; padding: 0; margin: 14px 0; display: grid; gap: 8px; grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.improve-flow li { counter-increment: f; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; display: grid; gap: 4px; align-content: start; position: relative; }
+.improve-flow li::before { content: counter(f); position: absolute; top: 8px; right: 10px; color: var(--muted); font-weight: 700; font-size: 0.8125rem; }
+.improve-flow b { font-size: 0.9375rem; line-height: 1.5; }
+.improve-flow small { color: var(--muted); }
+.improve-flow .who { font-size: 0.75rem; font-weight: 700; border-radius: 999px; padding: 2px 8px; justify-self: start; }
+.improve-flow .who.ai { background: var(--accent-soft); color: var(--accent); }
+.improve-flow .who.code { background: var(--surface-2); color: var(--ink-2); }
+.improve-flow .who.human { background: var(--good-soft); color: var(--good); }
+.improve-terms { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 0 0 18px; font-size: 0.875rem; color: var(--ink-2); }
+.improve-terms dt { font-weight: 700; color: var(--ink); }
+.improve-terms dd { margin: 0; }
+.improve-steps li.step-reverted { border-left: 4px solid var(--warn); }
+.improve-steps li.step-kept { border-left: 4px solid var(--good); }
+.improve-steps .key { font-weight: 700; }
+.improve-headline { font-size: 1.0625rem; font-weight: 700; margin: 8px 0; }
+.verdicts { list-style: none; padding: 0; margin: 6px 0 12px; display: grid; gap: 6px; max-width: 820px; }
+.verdicts li { display: flex; gap: 10px; align-items: baseline; padding: 6px 10px; border-radius: 8px; background: var(--surface-2); }
+.verdicts li.ng { background: var(--bad-soft); }
+.verdicts .mark { font-weight: 800; width: 1.2em; text-align: center; }
+.verdicts li.ok .mark { color: var(--good); }
+.verdicts li.ng .mark { color: var(--bad); }
+.verdicts small { color: var(--muted); margin-left: 4px; }
+@media (max-width: 900px) { .improve-flow { grid-template-columns: 1fr; } }
