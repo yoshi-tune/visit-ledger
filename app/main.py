@@ -723,6 +723,21 @@ def start_analysis(body: AnalysisIn | None = None,
     return {**started, "notice": notice}
 
 
+@app.get("/api/analysis-latest")
+def analysis_latest(conn: sqlite3.Connection = Depends(get_conn)) -> dict:
+    """効果の画面の「Claude の見立て」の欄：いちばん新しい分析の、見立てと次の一手だけ（読むだけ）。"""
+    run = ledger.latest_done_run(conn)
+    if not run:
+        return {"run": None}
+    r = run["report"]
+    return {"run": {
+        "analysis_id": run["analysis_id"], "as_of": run["as_of"], "mode": r.get("mode"),
+        "model_label": config.MODELS.get(run["model"] or "", {}).get("label", run["model"]),
+        "revised_view": r.get("revised_view"), "next_action": (r.get("next_action") or {}).get("action"),
+        "matches": (r.get("reconciliation") or {}).get("matches"),
+    }}
+
+
 @app.get("/api/analysis-costs")
 def analysis_costs(conn: sqlite3.Connection = Depends(get_conn)) -> dict:
     """モデルごとの分析の費用の目安（定価で数えた額。正しい額は Claude Console で見る）。"""

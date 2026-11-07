@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>施策の効果</title>
+  <title>効果｜ナットク台帳</title>
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
@@ -18,29 +18,44 @@
         <div class="muted" id="period"></div>
       </div>
       <div class="toolbar-right">
-        <a class="btn sm" href="#claude">Claude に分析を頼む ↓</a>
+        <a class="btn sm jump-claude" href="#claude">Claude の見立てへ ↓</a>
         <span class="today-chip" id="asof"></span>
       </div>
     </div>
     <p id="note" class="banner"></p>
 
-    <div id="kpis" class="kpis"></div>
-    <div id="funnels" class="two"></div>
-    <p id="unknown" class="muted"></p>
+    <div id="kpis" class="kpi-row" aria-label="主な数字（チラシ／LINE）"></div>
 
-    <section class="card" id="claude" style="margin-top:16px;scroll-margin-top:80px">
-      <div class="analysis-head">
-        <div>
-          <h2>Claude に分析を頼む</h2>
-          <p class="muted">台帳の書き出し（名前・電話を含まない列だけ）とこの画面の数字を渡し、Claude が集計を重ねて調べます。ふつう4〜7分かかります。報告は新しいタブに出て、そのままチャットで続けて質問できます。</p>
+    <div class="dash-grid">
+      <section class="card" aria-labelledby="journey-title">
+        <div class="chart-head">
+          <h2 id="journey-title">来店までの道のり：どこで離れるか</h2>
+          <div class="legend" aria-label="凡例"><span><i class="dot flyer"></i>チラシ</span><span><i class="dot line"></i>LINE</span></div>
         </div>
-      </div>
-      <h3 class="small-head">使うモデル</h3>
-      <div id="models" class="model-row" role="group" aria-label="使うモデル"></div>
-      <p id="cost-note" class="muted" style="margin-top:8px"></p>
-      <div class="ask-row"><button id="ask" class="btn">分析を頼む（4〜7分・新しいタブで開く）</button></div>
-      <div id="status" class="analysis-status"></div>
-    </section>
+        <p class="muted chart-note">LP を開いた数を 100% として、各段に残った割合（棒の右に件数）。チラシと LINE は LP の数が違うので、割合で比べます。</p>
+        <div id="journey" class="journey-chart" role="img" aria-label="来店までの道のりの割合（チラシと LINE）"></div>
+      </section>
+
+      <section class="card claude-card" id="claude" style="scroll-margin-top:80px" aria-labelledby="claude-title">
+        <h2 id="claude-title">Claude の見立て</h2>
+        <div id="latest"></div>
+        <details class="ask-box" id="ask-box">
+          <summary>新しく分析を頼む（ふつう4〜7分）</summary>
+          <p class="muted">台帳の書き出し（名前・電話を含まない列だけ）とこの画面の数字を渡し、Claude が集計を重ねて調べます。報告は新しいタブに出て、そのままチャットで続けて質問できます。</p>
+          <h3 class="small-head">使うモデル</h3>
+          <div id="models" class="model-row" role="group" aria-label="使うモデル"></div>
+          <p id="cost-note" class="muted" style="margin-top:8px"></p>
+          <div class="ask-row"><button id="ask" class="btn block">分析を頼む（4〜7分・新しいタブで開く）</button></div>
+        </details>
+        <div id="status" class="analysis-status"></div>
+      </section>
+    </div>
+
+    <details class="card details-card">
+      <summary>細かい数字（媒体ごとの道のりの件数・予約のその後・クーポン）</summary>
+      <div id="funnels" class="two" style="margin-top:12px"></div>
+      <p id="unknown" class="muted"></p>
+    </details>
     <p id="error" class="input-error"></p>
   </main>
   <script type="module" src="/static/dashboard.js"></script>

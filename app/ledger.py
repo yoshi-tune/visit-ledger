@@ -889,6 +889,18 @@ def get_improvement(conn: sqlite3.Connection, improvement_id: int) -> dict | Non
     return dict(row) if row else None
 
 
+def latest_done_run(conn: sqlite3.Connection) -> dict | None:
+    """効果の画面に出す、いちばん新しい「終わった分析」（見本の報告も含む。失敗と報告の無いものは除く）。"""
+    for row in conn.execute(
+        "SELECT analysis_id, as_of, model, report_json FROM analysis_runs"
+        " WHERE status = 'done' AND report_json IS NOT NULL ORDER BY rowid DESC"
+    ):
+        report = json.loads(row["report_json"])
+        if "error" not in report and "next_action" in report:
+            return {**dict(row), "report": report}
+    return None
+
+
 def latest_reviewable_run(conn: sqlite3.Connection) -> dict | None:
     """振り返りの元にする、いちばん新しい「終わった本物の分析」（見本の報告と失敗は除く）。"""
     for row in conn.execute(

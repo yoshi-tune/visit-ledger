@@ -172,6 +172,29 @@ function card(it) {
   return el("section", { class: "card improve-card" }, children);
 }
 
+/** 上に置く要約：何回試して、どれを戻し、どれを残したか（数字は各回の「確かめた結果」と同じ） @param {any[]} items */
+function summary(items) {
+  const sorted = [...items].sort((a, b) => a.iteration - b.iteration);
+  return el("section", { class: "card improve-summary" }, [
+    el("h2", {}, [`結論：${sorted.length}回試して、${sorted.filter((it) => it.decision === "kept").length}回分を残しました`]),
+    el("ol", { class: "improve-steps" }, sorted.map((it) => {
+      const [label, tone] = DECISION[/** @type {keyof typeof DECISION} */ (it.decision)] || ["途中・失敗", "warn"];
+      const b = it.eval_base, c = it.eval_cand;
+      const facts = b && c ? [
+        `採点の合格：台帳A ${rounds(b.plant)} → ${rounds(c.plant)}・台帳B ${rounds(b.noplant)} → ${rounds(c.noplant)}`,
+        `費用 ${usd(b.total_cost_cents)} → ${usd(c.total_cost_cents)}`,
+      ] : [];
+      return el("li", {}, [
+        el("div", { class: "improve-step-head" }, [el("b", {}, [`第${it.iteration}回`]), el("span", { class: `badge ${tone}` }, [label]),
+          ...(it.applied_at ? [el("span", { class: "badge good" }, ["本番に使った"])] : [])]),
+        el("p", {}, [it.plain?.headline || it.eli5 || it.reason || ""]),
+        ...facts.map((f) => el("p", { class: "muted" }, [f])),
+      ]);
+    })),
+    el("p", { class: "muted" }, ["残すか戻すかは、コードの決まり（報告の形・報告に書かれた検算の一致・両方の台帳で採点に合格・中身の確かめ）で決め、本番に使うかは人が押して決めます。詳しくは下の各回で。"]),
+  ]);
+}
+
 async function load() {
   const { items, max_grades: mg, sample } = await api("/api/improvements");
   if (mg) maxGrades = mg;
@@ -180,6 +203,7 @@ async function load() {
     // 見本の記録には「本番に使う」を出さない（この台帳で回した見直しではないため）
     list.unshift(el("p", { class: "banner" }, ["見本の記録です。作者が鍵を入れて、答えの分かっている見本の台帳2つで本物の見直しを2回回した時の記録を、そのまま出しています（この台帳で回したものではありません）。"]));
   }
+  if (items.length) list.unshift(summary(items));
   byId("list").replaceChildren(...list);
   byId("guide").replaceChildren(items.length
     ? say("答えの分かっている見本の台帳で試して、良くなった時だけ残しています。報告の前と後を見て、使うか決めてくださいね。", "normal")

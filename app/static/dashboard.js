@@ -1,20 +1,79 @@
 // @ts-check
-// 効果の画面：媒体ごとの来店率（数字の札）、来店までの道のり（横棒）、予約の内訳。
-// 分析の依頼（モデルを選び、別の画面で開く）。報告とチャットは analysis.js。
+// 効果の画面（ダッシュボード）：主な数字の札（チラシ／LINE を並べて）、来店までの道のりの図（LP を 100% とした割合で
+// 2つの媒体を重ねて比べる）、Claude の見立て（いちばん新しい分析の次の一手）と分析の依頼。細かい件数は下にたたむ。
+// 報告とチャットは analysis.js。
 import { api, byId, el, fmtDay, fmtRate, pageLoading, srcLabel } from "./common.js";
 import { say } from "./mascot.js";
 
 const ask = /** @type {HTMLButtonElement} */ (byId("ask"));
 
-/** @param {any} c */
-function kpi(c) {
-  const b = c.reservations;
-  // 予約・来店待ち・取消の内訳は、下の「来店までの道のり」に出すので、ここは来店率と式だけにする
-  return el("section", { class: "card kpi" }, [
-    el("div", { class: "label" }, [el("span", { class: `dot ${c.src}` }), `${srcLabel(c.src)} 経由の来店率`]),
-    el("div", { class: "value" }, [fmtRate(c.visit_rate)]),
-    el("div", { class: "sub" }, [`来店 ${b.visited} ÷（来店 ${b.visited} ＋ 来店未記録 ${b.unrecorded}）`]),
+/** 主な数字の札：1つの札にチラシと LINE を並べる（色は点で、文字は文字の色）
+ * @param {string} label @param {any[]} campaigns @param {(c: any) => string} value @param {boolean} [hero] */
+function tile(label, campaigns, value, hero = false) {
+  return el("section", { class: `card tile${hero ? " tile-hero" : ""}` }, [
+    el("div", { class: "tile-label" }, [label]),
+    ...campaigns.map((c) => el("div", { class: "tile-row" }, [
+      el("span", { class: "tile-src" }, [el("i", { class: `dot ${c.src}` }), srcLabel(c.src)]),
+      el("b", {}, [value(c)]),
+    ])),
   ]);
+}
+
+/** @param {any[]} cs */
+function kpis(cs) {
+  const stage = (/** @type {any} */ c, /** @type {string} */ key) => c.stages.find((/** @type {any} */ s) => s.key === key)?.count ?? 0;
+  return [
+    tile("LP を開いた", cs, (c) => String(stage(c, "lp_sessions"))),
+    tile("予約", cs, (c) => String(c.reservations.total)),
+    tile("来店", cs, (c) => String(c.reservations.visited)),
+    tile("来店率（来店 ÷ 来店＋来店未記録）", cs, (c) => fmtRate(c.visit_rate), true),
+    tile("クーポンを店で使った", cs, (c) => String(c.coupons?.used ?? "—")),
+  ];
+}
+
+/** 来店までの道のり：段ごとに、チラシと LINE の棒を並べる（LP を 100% とした割合・1本の軸） @param {any[]} cs */
+function journey(cs) {
+  const steps = [
+    { label: "LP を開いた", count: (/** @type {any} */ c) => c.stages[0].count },
+    { label: "予約ボタンを押した", count: (/** @type {any} */ c) => c.stages[1]?.count ?? 0 },
+    { label: "予約を送った", count: (/** @type {any} */ c) => c.stages[2]?.count ?? 0 },
+    { label: "来店した", count: (/** @type {any} */ c) => c.reservations.visited },
+  ];
+  return steps.map((st) => el("div", { class: "jrow" }, [
+    el("div", { class: "jlabel" }, [st.label]),
+    el("div", { class: "jbars" }, cs.map((c) => {
+      const top = c.stages[0].count || 1;
+      const n = st.count(c);
+      const pct = n / top;
+      const tip = `${srcLabel(c.src)}・${st.label}：${n}件（LP の ${fmtRate(pct)}）`;
+      return el("div", { class: "jbar-row", title: tip, tabindex: "0", "aria-label": tip }, [
+        el("div", { class: "jtrack" }, [el("div", { class: `jbar ${c.src}`, style: `width:${Math.max(0.6, pct * 100)}%` })]),
+        el("span", { class: "jval" }, [`${fmtRate(pct)}`, el("small", {}, [` ${n}件`])]),
+      ]);
+    })),
+  ]));
+}
+
+/** Claude の見立て：いちばん新しい分析の次の一手。無ければ頼み方を案内する @param {any} run */
+function latestCard(run) {
+  if (!run) {
+    byId("ask-box").setAttribute("open", "");
+    return [say("まだ分析がありません。下の「分析を頼む」で、Claude が台帳を数え直して次の一手を出します。", "normal", { size: 44 })];
+  }
+  const href = `/analysis/${encodeURIComponent(run.analysis_id)}`;
+  return [
+    el("p", { class: "muted latest-meta" }, [
+      `${fmtDay(run.as_of)} の分析・${run.model_label}`,
+      run.mode === "sample" ? "（見本の報告）" : "",
+      run.matches === true ? "・✓ 検算：アプリの数字と一致" : "",
+    ]),
+    el("div", { class: "latest-next" }, [el("div", { class: "small" }, ["次の一手"]), el("p", {}, [run.next_action || "—"])]),
+    el("p", { class: "latest-view" }, [el("b", {}, ["見立て："]), run.revised_view || "—"]),
+    el("div", { class: "latest-actions" }, [
+      el("a", { class: "btn sm", href, target: "vl-analysis" }, ["報告を読む →"]),
+      el("a", { class: "btn sm soft", href: `/maintenance?from=${encodeURIComponent(run.analysis_id)}` }, ["ナットクに頼む（受付の仕事にする）"]),
+    ]),
+  ];
 }
 
 /** @param {any} c */
@@ -62,7 +121,8 @@ async function loadFunnel() {
   byId("note").textContent = f.note;
   byId("period").textContent = `集計の対象：${fmtDay(f.period.from)} 〜 ${fmtDay(f.period.to)} に始まった LP のセッション`;
   byId("asof").textContent = `基準日 ${fmtDay(f.as_of)}`;
-  byId("kpis").replaceChildren(...f.campaigns.map(kpi));
+  byId("kpis").replaceChildren(...kpis(f.campaigns));
+  byId("journey").replaceChildren(...journey(f.campaigns));
   byId("funnels").replaceChildren(...f.campaigns.map(funnelCard));
   byId("unknown").textContent = `施策が分からない分（道のりの数字には入れていません）：LP のセッション ${f.unknown.lp_sessions}・予約 ${f.unknown.reservations}`;
 }
@@ -139,9 +199,10 @@ async function main() {
   renderModels(conf);
   renderCostNote();
   await loadFunnel();
+  const latest = await api("/api/analysis-latest").catch(() => ({ run: null }));
+  byId("latest").replaceChildren(...latestCard(latest.run));
   const last = sessionStorage.getItem("vl:analysis");
-  if (last) showLast(last);
-  else byId("status").replaceChildren(say("数字の裏側を、Claude といっしょに調べますよ。終わったら、続けてチャットで聞けます。", "normal"));
+  if (last && last !== latest.run?.analysis_id) showLast(last);  // 頼んだばかりで、まだ終わっていない分析への入口
 }
 
 main().finally(pageLoading()).catch((e) => { byId("error").textContent = `読み込めませんでした：${e.message}`; });
