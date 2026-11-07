@@ -1,5 +1,8 @@
 # 公開 URL（Render）で動かすための形。手元で試すときは README の uv の手順を使う
 FROM python:3.14-slim
+# 店の時刻（来店・お知らせの記録）を日本時間で残す
+RUN apt-get update && apt-get install -y --no-install-recommends tzdata && rm -rf /var/lib/apt/lists/*
+ENV TZ=Asia/Tokyo
 COPY --from=ghcr.io/astral-sh/uv:0.11.27 /uv /uvx /bin/
 
 WORKDIR /app
