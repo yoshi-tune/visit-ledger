@@ -418,7 +418,7 @@ def list_change_requests(conn: sqlite3.Connection = Depends(get_conn)) -> dict:
     version, settings = ledger.current_settings(conn)
     items = [_change_view(conn, r) for r in ledger.list_change_requests(conn)]
     last = next((i for i in items if i["status"] == "applied" and i["applied_version"] == version), None)
-    return {"version": version, "tabs": [{"id": t["id"], "title": t["title"], "conditions_text": maintenance.describe(t["conditions"])}
+    return {"version": version, "tabs": [{"id": t["id"], "title": t["title"], "conditions_text": maintenance.describe(t["conditions"]), "conditions": t["conditions"]}
                                          for t in settings["desk_tabs"]],
             "can_revert": bool(last), "items": items}
 

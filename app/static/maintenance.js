@@ -43,7 +43,9 @@ function setStep(now) {
 function appliedCard(tab) {
   return el("section", { class: "card mt-applied" }, [
     el("h2", {}, [`④ 受付に「${tab.title}」のタブが出ています`]),
-    el("p", {}, ["受付でお客様に連絡したら「送った」、返事があれば「返事あり」を押してください（このアプリは実際には送らず、記録だけします）。次の分析が、この記録で来店を比べます。"]),
+    el("p", {}, [typeof tab.conditions?.past_days_max === "number"
+      ? "受付で、作業伝票・レジの記録と照らして、来ていた予約は「その日に来店」、来なかった・電話で取消なら「取消」を押してください。照らしても分からない予約は、来店未記録のまま残ります。"
+      : "受付でお客様に連絡したら「送った」、返事があれば「返事あり」を押してください（このアプリは実際には送らず、記録だけします）。次の分析が、この記録で来店を比べます。"]),
     el("div", { style: "display:flex;gap:10px;flex-wrap:wrap;align-items:center" }, [
       el("a", { class: "btn", href: `/desk?tab=${encodeURIComponent(`x:${tab.id}`)}` }, ["受付で見る →"]),
       el("span", { class: "muted" }, ["戻したい時は、下の「さっきの変更を取り消す」"]),
@@ -76,7 +78,7 @@ function proposalCard(it) {
         el("div", { class: "meta" }, [
           el("span", {}, [r.menu]), el("span", {}, [`来店予定 ${fmtDateTime(r.confirmed_for)}`]),
           el("span", { class: "tag" }, [el("span", { class: `dot ${r.src}` }), srcLabel(r.src)]),
-          el("span", { class: "muted" }, [`予約を送ってから${r.lead_days}日`]),
+          el("span", { class: "muted" }, [`予約日→来店予定日：${r.lead_days}日`]),
         ]),
       ]))));
     }
