@@ -573,3 +573,17 @@ details > summary { cursor: pointer; font-weight: 700; color: var(--ink-2); padd
 .verdicts li.ng .mark { color: var(--bad); }
 .verdicts small { color: var(--muted); margin-left: 4px; }
 @media (max-width: 900px) { .improve-flow { grid-template-columns: 1fr; } }
+/* 次の一手：4段の進み方 */
+.mt-steps { list-style: none; counter-reset: s; padding: 0; margin: 14px 0 10px; display: grid; gap: 8px; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.mt-steps li { counter-increment: s; border: 1px solid var(--line); border-radius: 12px; padding: 8px 12px 10px; background: var(--surface); display: grid; gap: 2px; }
+.mt-steps li::before { content: counter(s); width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 0.8125rem; font-weight: 700; background: var(--surface-2); color: var(--ink-2); }
+.mt-steps li b { font-size: 0.9375rem; }
+.mt-steps li small { color: var(--muted); font-size: 0.8125rem; }
+.mt-steps li.now { border: 2px solid var(--accent); }
+.mt-steps li.now::before { background: var(--accent); color: var(--accent-ink); }
+.mt-steps li.done::before { content: "✓"; background: var(--good-soft); color: var(--good); }
+.mt-rules { margin-bottom: 12px; }
+.mt-applied { margin-top: 16px; border: 2px solid var(--good); }
+.mt-applied h2 { font-size: 1.0625rem; }
+.mt-apply-note { font-weight: 700; margin: 14px 0 0; }
+@media (max-width: 640px) { .mt-steps { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

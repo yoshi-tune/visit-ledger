@@ -29,6 +29,28 @@ function button(label, cls, fn, ask) {
   return b;
 }
 
+/** 上の4段の進み方：今どこにいるか（前の段は済み） @param {number} now */
+function setStep(now) {
+  for (const li of byId("mt-steps").querySelectorAll("li")) {
+    const n = Number(li.getAttribute("data-step"));
+    li.classList.toggle("done", n < now);
+    li.classList.toggle("now", n === now);
+    if (n === now) li.setAttribute("aria-current", "step"); else li.removeAttribute("aria-current");
+  }
+}
+
+/** 反映した後：受付へ進む案内（タブの名前と、記録が次の分析につながること） @param {any} tab */
+function appliedCard(tab) {
+  return el("section", { class: "card mt-applied" }, [
+    el("h2", {}, [`④ 受付に「${tab.title}」のタブが出ています`]),
+    el("p", {}, ["受付でお客様に連絡したら「送った」、返事があれば「返事あり」を押してください（このアプリは実際には送らず、記録だけします）。次の分析が、この記録で来店を比べます。"]),
+    el("div", { style: "display:flex;gap:10px;flex-wrap:wrap;align-items:center" }, [
+      el("a", { class: "btn", href: `/desk?tab=${encodeURIComponent(`x:${tab.id}`)}` }, ["受付で見る →"]),
+      el("span", { class: "muted" }, ["戻したい時は、下の「さっきの変更を取り消す」"]),
+    ]),
+  ]);
+}
+
 /** 提案の見え方：返事・条件（日本語で全部）・見本（件数と一覧）・反映／やめる @param {any} it */
 function proposalCard(it) {
   const children = [];
@@ -55,7 +77,8 @@ function proposalCard(it) {
       ]))));
     }
     if (it.status === "proposed") {
-      children.push(el("div", { class: "actions", style: "display:flex;gap:10px;margin-top:12px" }, [
+      children.push(el("p", { class: "mt-apply-note" }, [`③ 反映すると、受付に「${it.tab.title}」のタブが出て、上の ${p.rows.length}件が並びます（あとで取り消せます）。`]));
+      children.push(el("div", { class: "actions", style: "display:flex;gap:10px;margin-top:8px" }, [
         button("反映する", "btn", async () => {
           await api(`/api/change-requests/${it.id}/apply`, { json: { staff } });
           toast("反映しました。受付にタブが出ています");
@@ -72,7 +95,7 @@ function proposalCard(it) {
   const [label, tone] = STATUS[/** @type {keyof typeof STATUS} */ (it.status)] || [it.status, "warn"];
   return el("section", { class: "card improve-card", style: "margin-top:16px" }, [
     el("div", { class: "improve-head" }, [
-      el("h2", {}, [`依頼 ${it.id}`]), el("span", { class: `badge ${tone}` }, [label]),
+      el("h2", {}, [`${it.status === "proposed" ? "② ナットクの提案（" : ""}依頼 ${it.id}${it.status === "proposed" ? "）" : ""}`]), el("span", { class: `badge ${tone}` }, [label]),
       el("span", { class: "muted" }, [`${fmtDateTime(it.created_at)}・${it.requested_by || "—"}`]),
     ]),
     el("p", { class: "muted" }, [`依頼：${it.text}`]),
@@ -88,7 +111,7 @@ async function load() {
       el("b", {}, [t.title]), el("span", { class: "muted" }, [`　${t.conditions_text.join("・")}`]),
     ]))
     : [el("p", { class: "muted" }, ["足したタブはまだありません（受付は、はじめからあるタブだけです）。"])]));
-  tabs.append(el("p", { class: "muted" }, [`設定の版 ${data.version}`]));
+  tabs.append(el("p", { class: "muted small" }, [`設定の版 ${data.version}（反映・取り消しのたびに版を残します）`]));
   if (data.can_revert) {
     tabs.append(button("さっきの変更を取り消す", "btn ghost", async () => {
       await api("/api/change-requests/revert-last", { json: { staff } });
@@ -99,7 +122,10 @@ async function load() {
   const first = data.tabs[data.tabs.length - 1];
   tabs.append(el("p", {}, [el("a", { href: first ? `/desk?tab=${encodeURIComponent(`x:${first.id}`)}` : "/desk" }, ["受付で見る →"])]));
   const open = data.items.find((/** @type {any} */ i) => i.status === "proposed");
-  byId("result").replaceChildren(...(open ? [proposalCard(open)] : []));
+  // 今どの段か：提案が待っていれば②③、さっき反映したタブがあれば④、それ以外は①
+  const justApplied = !open && data.can_revert && first;
+  byId("result").replaceChildren(...(open ? [proposalCard(open)] : justApplied ? [appliedCard(first)] : []));
+  setStep(open ? 2 : justApplied ? 4 : 1);
   byId("history").replaceChildren(...data.items.filter((/** @type {any} */ i) => i !== open).map(proposalCard));
 }
 
