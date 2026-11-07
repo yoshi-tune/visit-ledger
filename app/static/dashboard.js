@@ -54,6 +54,25 @@ function journey(cs) {
   ]));
 }
 
+/** 次の一手から自動で作った提案の状態（人が反映するまでがループ。docs/LOOP.md） @param {any} p */
+function proposalLine(p) {
+  if (!p) return [el("p", { class: "loop-line wait" }, ["ナットクが、この次の一手から受付のタブの提案を作っています…（数秒）"])];
+  if (p.status === "proposed") {
+    return [el("a", { class: "loop-line todo", href: "/maintenance" }, [`人の番です：受付のタブ「${p.title}」の提案が反映待ちです →`])];
+  }
+  if (p.status === "applied") {
+    return [el("a", { class: "loop-line done", href: "/desk" }, [`反映済み：受付に「${p.title}」のタブが出ています →`])];
+  }
+  if (p.reason?.includes("同じ名前のタブ")) {
+    return [el("a", { class: "loop-line done", href: "/desk" }, ["この一手の受付のタブは、もう出ています（前の月に反映済み）→"])];
+  }
+  if (p.status === "rejected" && p.reason?.includes("部品")) {
+    return [el("a", { class: "loop-line todo", href: "/desk?tab=past" },
+      ["この一手は受付のタブの部品では表せません。過去の来店未記録は、受付の「押し忘れ」タブで確かめられます →"])];
+  }
+  return [el("a", { class: "loop-line", href: "/maintenance" }, [`提案：${p.reason || "やめた・取り消した"}（次の一手の画面で見る →）`])];
+}
+
 /** Claude の見立て：いちばん新しい分析の次の一手。無ければ頼み方を案内する @param {any} run */
 function latestCard(run) {
   if (!run) {
@@ -69,6 +88,7 @@ function latestCard(run) {
     ]),
     el("div", { class: "latest-next" }, [el("div", { class: "small" }, ["次の一手"]), el("p", {}, [run.next_action || "—"])]),
     el("p", { class: "latest-view" }, [el("b", {}, ["見立て："]), run.revised_view || "—"]),
+    ...proposalLine(run.proposal),
     el("div", { class: "latest-actions" }, [
       el("a", { class: "btn sm", href, target: "vl-analysis" }, ["報告を読む →"]),
       el("a", { class: "btn sm soft", href: `/maintenance?from=${encodeURIComponent(run.analysis_id)}` }, ["ナットクに頼む（受付の仕事にする）"]),
@@ -192,6 +212,12 @@ ask.addEventListener("click", async () => {
   }
 });
 
+async function refreshLatest() {
+  const latest = await api("/api/analysis-latest").catch(() => ({ run: null }));
+  byId("latest").replaceChildren(...latestCard(latest.run));
+  if (latest.run && !latest.run.proposal) setTimeout(refreshLatest, 4000);
+}
+
 async function main() {
   const conf = await api("/api/config");
   if (conf.store) byId("store").textContent = conf.store.name;
@@ -201,6 +227,7 @@ async function main() {
   await loadFunnel();
   const latest = await api("/api/analysis-latest").catch(() => ({ run: null }));
   byId("latest").replaceChildren(...latestCard(latest.run));
+  if (latest.run && !latest.run.proposal) setTimeout(refreshLatest, 4000);  // 自動の提案ができたら出し直す
   const last = sessionStorage.getItem("vl:analysis");
   if (last && last !== latest.run?.analysis_id) showLast(last);  // 頼んだばかりで、まだ終わっていない分析への入口
 }

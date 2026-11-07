@@ -60,6 +60,10 @@ function proposalCard(it) {
   if (it.reply) children.push(say(it.reply, it.tab ? "happy" : "think"));
   if (it.status === "failed" || (!it.tab && it.reason)) {
     children.push(el("p", { class: "error-box" }, [it.reason || "提案を使えませんでした"]));
+    if (it.status === "rejected") {
+      children.push(el("p", {}, ["部品で表せない一手でも、はじめからある受付のタブでできることがあります。過去の来店未記録は ",
+        el("a", { href: "/desk?tab=past" }, ["受付の「押し忘れ」タブ →"])]));
+    }
   }
   if (it.tab) {
     children.push(el("h3", {}, [`タブ「${it.tab.title}」の条件`]));
@@ -127,6 +131,7 @@ async function load() {
   byId("result").replaceChildren(...(open ? [proposalCard(open)] : justApplied ? [appliedCard(first)] : []));
   setStep(open ? 2 : justApplied ? 4 : 1);
   byId("history").replaceChildren(...data.items.filter((/** @type {any} */ i) => i !== open).map(proposalCard));
+  return data;
 }
 
 async function main() {
@@ -149,7 +154,12 @@ async function main() {
     hint.textContent = "鍵が無いので、依頼の文に関わらず、前に Claude が実際に出した見本の提案（8日以上先の予約に、前日のお知らせ）が返ります。件数と一覧は、今の台帳でアプリが数えます。";
     hint.hidden = false;
   }
-  if (fromAnalysis) {
+  // この分析の次の一手から、ナットクがもう自動で提案を作っていれば、下書きは出さずにそれを見てもらう
+  const first = await load();
+  const auto = fromAnalysis && first.items.find((/** @type {any} */ i) => i.source_analysis_id === fromAnalysis);
+  if (auto) {
+    byId("source").textContent = "この分析の次の一手から、ナットクが自動で提案を作りました（下）。別の依頼をする時だけ、依頼の文を書いてください。";
+  } else if (fromAnalysis) {
     try {
       const d = await api(`/api/change-requests/draft?from_analysis=${encodeURIComponent(fromAnalysis)}`);
       text.value = d.text;
@@ -167,7 +177,6 @@ async function main() {
       await load();
     });
   });
-  await load();
 }
 
 main().finally(pageLoading()).catch((e) => { byId("error").textContent = e.message; });

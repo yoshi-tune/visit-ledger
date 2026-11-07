@@ -1032,6 +1032,13 @@ def get_change_request(conn: sqlite3.Connection, request_id: int) -> dict | None
     return dict(row) if row else None
 
 
+def change_request_for_analysis(conn: sqlite3.Connection, analysis_id: str) -> dict | None:
+    """その分析の次の一手から作った、いちばん新しい依頼（無ければ None）。"""
+    row = conn.execute("SELECT * FROM change_requests WHERE source_analysis_id = ? ORDER BY id DESC LIMIT 1",
+                       (analysis_id,)).fetchone()
+    return dict(row) if row else None
+
+
 def list_change_requests(conn: sqlite3.Connection) -> list[dict]:
     return _rows(conn, "SELECT * FROM change_requests ORDER BY id DESC")
 

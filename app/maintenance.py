@@ -28,6 +28,8 @@ SRC_LABEL = {"flyer": "チラシ", "line": "LINE", "unknown": "媒体不明"}
 PARTS = {
     "status": {"label": "予約の状態", "kind": "choices", "values": list(STATUS_LABEL)},
     "visit_in_days": {"label": "来店予定日が今日から何日後か", "kind": "int", "min": 0, "max": 14},
+    # 予約中のまま来店予定日が過ぎた予約（＝来店未記録）を、受付で確かめるため。今日は含めない
+    "past_days_max": {"label": "来店予定日が過ぎた予約（過去◯日以内。今日は含めない）", "kind": "int", "min": 1, "max": 60},
     "lead_days_min": {"label": "予約を送った日から来店予定日までの日数（◯日以上）", "kind": "int", "min": 0, "max": 60},
     "lead_days_max": {"label": "予約を送った日から来店予定日までの日数（◯日以下）", "kind": "int", "min": 0, "max": 60},
     "menus": {"label": "メニュー", "kind": "choices", "values": list(ledger.MENUS)},
@@ -71,6 +73,8 @@ def validate_tab(tab) -> dict:
                     or any(v not in part["values"] for v in value):
                 raise ProposalError(f"{part['label']}に、選べない値があります")
             out[key] = [v for v in part["values"] if v in value]  # 並びを決まった順にそろえる
+    if "visit_in_days" in out and "past_days_max" in out:
+        raise ProposalError("「来店予定日が何日後」と「来店予定日が過ぎた予約」は一緒に使えません")
     if "lead_days_min" in out and "lead_days_max" in out and out["lead_days_min"] > out["lead_days_max"]:
         raise ProposalError("日数の「以上」が「以下」より大きくなっています")
     return {"title": title.strip(), "conditions": out}
@@ -83,6 +87,8 @@ def describe(cond: dict) -> list[str]:
         out.append("・".join(STATUS_LABEL[s] for s in cond["status"]))
     if "visit_in_days" in cond:
         out.append(f"来店予定日が{_day_word(cond['visit_in_days'])}")
+    if "past_days_max" in cond:
+        out.append(f"来店予定日が過ぎた予約（過去{cond['past_days_max']}日以内）")
     lo, hi = cond.get("lead_days_min"), cond.get("lead_days_max")
     if lo is not None and hi is not None:
         out.append(f"予約を送った日から来店予定日まで{lo}〜{hi}日")
@@ -110,6 +116,9 @@ def match(rows: list[dict], cond: dict, today: date) -> list[dict]:
             continue
         if "visit_in_days" in cond and r["confirmed_for"][:10] != (today + timedelta(days=cond["visit_in_days"])).isoformat():
             continue
+        if "past_days_max" in cond and not (
+                (today - timedelta(days=cond["past_days_max"])).isoformat() <= r["confirmed_for"][:10] < today.isoformat()):
+            continue
         if "lead_days_min" in cond and lead_days(r) < cond["lead_days_min"]:
             continue
         if "lead_days_max" in cond and lead_days(r) > cond["lead_days_max"]:
@@ -125,11 +134,13 @@ def match(rows: list[dict], cond: dict, today: date) -> list[dict]:
 def preview(rows: list[dict], cond: dict, today: date) -> dict:
     """見本：「明日の確定予約 ◯件のうち、条件に合うのは ◯件」と、その一覧（受付の画面と同じ見え方の項目だけ）。"""
     base_cond = {"status": cond.get("status", ["confirmed"])}
-    if "visit_in_days" in cond:
-        base_cond["visit_in_days"] = cond["visit_in_days"]
+    for k in ("visit_in_days", "past_days_max"):
+        if k in cond:
+            base_cond[k] = cond[k]
     base = match(rows, base_cond, today)
     hit = match(rows, cond, today)
-    where = _day_word(cond["visit_in_days"]) if "visit_in_days" in cond else "これから"
+    where = (_day_word(cond["visit_in_days"]) if "visit_in_days" in cond
+             else f"来店予定日が過ぎた（過去{cond['past_days_max']}日）" if "past_days_max" in cond else "これから")
     status = "・".join(STATUS_LABEL[s] for s in base_cond["status"])
     return {
         "base_label": f"{where}の{status}の予約",
@@ -157,6 +168,7 @@ PROPOSAL_SCHEMA = {
                     "properties": {
                         "status": {"type": "array", "items": {"type": "string", "enum": PARTS["status"]["values"]}},
                         "visit_in_days": {"type": "integer"},
+                        "past_days_max": {"type": "integer"},
                         "lead_days_min": {"type": "integer"},
                         "lead_days_max": {"type": "integer"},
                         "menus": {"type": "array", "items": {"type": "string", "enum": PARTS["menus"]["values"]}},
@@ -172,6 +184,7 @@ PROPOSE_SYSTEM = """あなたは、地域の店の受付の道具を直す係「
 使える条件は、渡される部品の一覧にあるものだけです。部品の組み合わせ（すべてを満たす予約を出す）で表してください。
 - SQL・式・部品に無い条件は書かない。部品で表せない依頼なら possible を false にして、何が部品に無いかを reply で言う
 - 「前日にお知らせ」のような依頼は、来店予定日が明日（visit_in_days = 1）・予約中（status = confirmed）にする
+- 「来店未記録を確かめる」のような依頼は、来店予定日が過ぎた予約（past_days_max。例：過去14日以内なら 14）・予約中（status = confirmed）にする（予約中のまま来店予定日が過ぎた予約が、来店未記録）。visit_in_days と一緒には使わない
 - 日数は「予約を送った日から来店予定日までの日数」。日時を変えた予約は、変えた後の来店予定日で数える
 - reply は店長向けの日本語で2〜4文。数え方（来店までの道のり・来店率）は変わらないことを添える。件数は書かない（件数はアプリが数えて見せる）
 """

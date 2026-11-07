@@ -35,7 +35,7 @@ let conf = null;
 // 「ナットクに頼む」の「受付で見る」からは、足したタブを直接開く（/desk?tab=x:tab1）
 let tab = new URLSearchParams(location.search).get("tab") || sessionStorage.getItem("vl:desk-tab") || "today";
 if (!(tab in HINT) && !tab.startsWith("x:")) tab = "today";
-/** 足したタブ（サーバーが条件で選んだ予約番号つき） @type {{id: string, title: string, conditions_text: string[], reserve_nos: string[]}[]} */
+/** 足したタブ（サーバーが条件で選んだ予約番号つき） @type {{id: string, title: string, conditions_text: string[], conditions: Record<string, any>, reserve_nos: string[]}[]} */
 let extraTabs = [];
 /** 予約番号 → お知らせの記録 @type {Record<string, {at: string, result: string, handled_by: string}[]>} */
 let reminders = {};
@@ -114,8 +114,10 @@ function card(r) {
       `お知らせ：${done.map((d) => REMINDER[/** @type {keyof typeof REMINDER} */ (d.result)] || d.result).join(" → ")}（最後 ${fmtDateTime(last.at)}・${last.handled_by}）`,
     ]), actions);
   }
+  // 来店予定日が過ぎたタブ（予約中のまま＝来店未記録を確かめる）は、お知らせではなく「その日に来店」・日時を変える・取消を出す
+  const pastTab = Boolean(extra && typeof extra.conditions?.past_days_max === "number");
   // 記録のボタンは、足したタブでは予約中のカードに、他のタブでは記録が始まったカードに出す（来店の後に届いた返事も付けられる。実際には送らず、記録だけ）
-  if ((extra && r.status === "confirmed") || done.length) {
+  if (((extra && !pastTab && r.status === "confirmed") || done.length)) {
     const sent = done.some((d) => d.result === "sent");
     for (const [result, label] of Object.entries(REMINDER_BUTTONS)) {
       if (result === "replied" && !sent) continue; // 返事は「送った」の後だけ
@@ -137,8 +139,16 @@ function card(r) {
       { reserve_no: r.reserve_no, visited_on: pastDay }, `${r.customer_name} 様の来店を ${fmtDay(pastDay)} に記録しました`, undefined, true), "btn block"));
     return box;
   }
+  if (pastTab && r.status === "confirmed") {
+    const d = day(r.confirmed_for);
+    actions.append(btn(`${fmtDay(d)} に来店`, () => act("/api/visits",
+      { reserve_no: r.reserve_no, visited_on: d }, `${r.customer_name} 様の来店を ${fmtDay(d)} に記録しました`, undefined, true), "btn"));
+    actions.append(btn("取消（来なかった・電話で取消）", () => {
+      if (confirm(`${r.customer_name} 様の予約を取消にしますか？`)) act(`/api/reservations/${no}/cancel`, {}, "取消にしました");
+    }, "btn soft"));
+  }
   if (r.status === "confirmed") {
-    if (day(r.confirmed_for) <= conf.today) {
+    if (!pastTab && day(r.confirmed_for) <= conf.today) {
       actions.append(btn("来店", () => act("/api/visits", { reserve_no: r.reserve_no }, `${r.customer_name} 様、いらっしゃいませ！来店を記録しました`, undefined, true), "btn lg"));
     }
     actions.append(btn("日時を変える", async () => {
@@ -191,7 +201,9 @@ function render() {
   const extraTab = currentExtra();
   if (tab.startsWith("x:") && !extraTab) tab = "today";  // 取り消されたタブを開いていた時
   byId("hint").textContent = extraTab
-    ? `条件：${extraTab.conditions_text.join("・")}。送ったら「送った」、返事があれば「返事あり」を押してください（実際には送りません・記録だけ）。日時は「日時を変える」から変えると、「日時を変えた」も記録されます。`
+    ? (typeof extraTab.conditions?.past_days_max === "number"
+      ? `条件：${extraTab.conditions_text.join("・")}。作業伝票・レジの記録と照らして、来ていたら「その日に来店」、来なかった・電話で取消なら「取消」、日をずらしたなら「日時を変える」を押してください。押すとこの一覧から消えます。`
+      : `条件：${extraTab.conditions_text.join("・")}。送ったら「送った」、返事があれば「返事あり」を押してください（実際には送りません・記録だけ）。日時は「日時を変える」から変えると、「日時を変えた」も記録されます。`)
     : HINT[/** @type {keyof typeof HINT} */ (tab)];
 
   const extra = byId("extra");

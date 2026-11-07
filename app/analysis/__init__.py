@@ -51,6 +51,7 @@ def start(conn, snapshot: dict, funnel: dict, model: str = config.DEFAULT_MODEL,
             model=sample["model"],
             report_json=json.dumps({**sample["report"], "mode": "sample"}, ensure_ascii=False),
         )
+        _after_done(analysis_id)
         return {"analysis_id": analysis_id, "status": "done"}
     previous = _previous(conn)
     ledger.create_analysis_run(
@@ -148,6 +149,7 @@ def _run(analysis_id: str) -> None:
             conn, analysis_id, status="done", report_json=json.dumps(report, ensure_ascii=False)
         )
         _record_cost(conn, analysis_id)
+        _after_done(analysis_id)
     except Exception as e:  # 裏の処理なので、理由を記録して画面に出す
         message = str(e) if isinstance(e, RunError) else _describe(e)
         ledger.update_analysis_run(
@@ -279,12 +281,20 @@ def _resume(analysis_id: str, session_id: str) -> None:
                                    report_json=json.dumps(report, ensure_ascii=False),
                                    tool_log=json.dumps(log, ensure_ascii=False))
         _record_cost(conn, analysis_id)
+        _after_done(analysis_id)
     except Exception as e:
         message = str(e) if isinstance(e, RunError) else _describe(e)
         ledger.update_analysis_run(conn, analysis_id, status="failed",
                                    report_json=json.dumps({"error": message}, ensure_ascii=False))
     finally:
         conn.close()
+
+
+def _after_done(analysis_id: str) -> None:
+    """分析が終わった後、次の一手から受付のタブの提案まで自動で作る（app/loop.py。反映は人が押す）。"""
+    from app import loop
+
+    loop.start_after(analysis_id)
 
 
 def _record_cost(conn, analysis_id: str) -> None:

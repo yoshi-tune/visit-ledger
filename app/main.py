@@ -21,7 +21,7 @@ from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Resp
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from app import analysis, config, funnel, ledger, maintenance, public
+from app import analysis, config, funnel, ledger, loop, maintenance, public
 
 if not config.DB_PATH.exists():
     # 初めての起動：見本の台帳を作る（scripts/make_sample.py と同じ中身。作り直す時はそちらを回す）
@@ -437,24 +437,10 @@ def create_change(body: ChangeIn, conn: sqlite3.Connection = Depends(get_conn)) 
     """依頼を受けて、ナットク（Claude）に条件を提案させる。部品から外れた案は捨てる（記録は「捨てた」で残す）。"""
     if body.staff not in STAFF:
         raise HTTPException(400, "担当を選んでください")
-    _, settings = ledger.current_settings(conn)
-    with public.LOCK:  # 公開版の全体の上限：確かめと記録（見込みに数える）を続けて行う
-        force_sample = public.refuse_proposal(conn)
-        rid = ledger.add_change_request(conn, fmt(config.now()), body.staff, body.text.strip(), body.source_analysis_id)
     try:
-        proposal, mode = maintenance.propose(body.text.strip(), settings, force_sample=force_sample)
-        tab = maintenance.check_proposal(proposal, settings)
-    except maintenance.ProposalError as e:
-        ledger.update_change_request(conn, rid, status="failed", reason=f"提案を捨てました：{e}",
-                                     proposal_json=json.dumps({"mode": locals().get("mode")}, ensure_ascii=False))
-        return _change_view(conn, ledger.get_change_request(conn, rid))
-    except Exception as e:  # 呼び出しの失敗（通信・鍵など）
-        ledger.update_change_request(conn, rid, status="failed", reason=f"提案を作れませんでした：{type(e).__name__}")
+        rid = loop.propose(conn, body.staff, body.text.strip(), body.source_analysis_id)
+    except loop.ProposalCallError as e:
         raise HTTPException(502, "提案を作れませんでした。少し待ってからもう一度頼んでください") from e
-    record = {"mode": mode, "reply": proposal.get("reply"), "raw": proposal, "tab_checked": tab,
-              **({"sample_text": maintenance.sample_text()} if mode == "sample" else {})}
-    ledger.update_change_request(conn, rid, proposal_json=json.dumps(record, ensure_ascii=False),
-                                 **({} if tab else {"status": "rejected", "reason": "決まった部品では表せない依頼でした"}))
     return _change_view(conn, ledger.get_change_request(conn, rid))
 
 
@@ -498,7 +484,7 @@ def desk_tabs(conn: sqlite3.Connection = Depends(get_conn)) -> dict:
     """受付に足したタブと、それぞれに当てはまる予約番号（当てはめはアプリの側の1つの関数）・お知らせの記録。"""
     version, settings = ledger.current_settings(conn)
     rows = ledger.list_reservations(conn, config.STORE_ID)
-    tabs = [{"id": t["id"], "title": t["title"], "conditions_text": maintenance.describe(t["conditions"]),
+    tabs = [{"id": t["id"], "title": t["title"], "conditions_text": maintenance.describe(t["conditions"]), "conditions": t["conditions"],
              "reserve_nos": [r["reserve_no"] for r in maintenance.match(rows, t["conditions"], config.TODAY)]}
             for t in settings["desk_tabs"]]
     reminders: dict[str, list] = {}
@@ -735,7 +721,18 @@ def analysis_latest(conn: sqlite3.Connection = Depends(get_conn)) -> dict:
         "model_label": config.MODELS.get(run["model"] or "", {}).get("label", run["model"]),
         "revised_view": r.get("revised_view"), "next_action": (r.get("next_action") or {}).get("action"),
         "matches": (r.get("reconciliation") or {}).get("matches"),
+        "proposal": _proposal_state(conn, run["analysis_id"]),
     }}
+
+
+def _proposal_state(conn: sqlite3.Connection, analysis_id: str) -> dict | None:
+    """その分析の次の一手から作った提案の状態（効果の画面で「反映待ち」などを出す）。"""
+    req = ledger.change_request_for_analysis(conn, analysis_id)
+    if not req:
+        return None
+    p = json.loads(req["proposal_json"]) if req["proposal_json"] else {}
+    return {"id": req["id"], "status": req["status"], "auto": req["requested_by"] == loop.AUTO_BY,
+            "title": (p.get("tab_checked") or {}).get("title"), "reason": req["reason"]}
 
 
 @app.get("/api/analysis-costs")
